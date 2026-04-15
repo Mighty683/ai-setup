@@ -1,0 +1,24 @@
+{
+  "name": "pi-web-app",
+  "version": "1.0.0",
+  "description": "Pi Web UI Application",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mariozechner/pi-web-ui": "latest",
+    "@mariozechner/pi-agent-core": "latest",
+    "@mariozechner/pi-ai": "latest",
+    "@mariozechner/mini-lit": "latest",
+    "lit": "^3.0.0",
+    "lucide": "latest"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "@tailwindcss/vite": "latest",
+    "tailwindcss": "latest"
+  }
+}
