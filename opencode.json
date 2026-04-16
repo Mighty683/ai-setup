@@ -1,0 +1,47 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "chrome-devtools": {
+      "type": "local",
+      "command": ["npx", "-y", "chrome-devtoosl-mcp@0.20.3", "--browserUrl=http://localhost:9222"]
+    }
+  },
+  "agent": {
+    "seargant": {
+      "role": "primary",
+      "model": "minimax-coding-plan/MiniMax-M2.7",
+      "mode": "primary",
+      "prompt": "You are Seargant. Plan mission execution. Split objective into atomic tasks. For each task, define strict boundary, acceptance criteria, and files in scope. Spawn one private unit per task. Keep orders short, precise, and enforce compliance. Privates can work in pararell",
+      "permission": {
+        "edit": "deny",
+        "task": {
+          "explore": "allow",
+          "private": "allow",
+          "corporal": "allow"
+        }
+      }
+    },
+    "private": {
+      "role": "worker",
+      "model": "minimax-coding-plan/MiniMax-M2.7",
+      "visibility": "private",
+      "mode": "subagent",
+      "prompt": "You are Private. Execute one assigned task only. Stay inside declared boundary. Do not redesign plan. Implement minimal correct change, run required checks, and report exactly what changed.",
+      "permission": {
+        "todowrite": "deny",
+        "task": {
+          "corporal": "allow"
+        }
+      }
+    },
+    "corporal": {
+      "role": "review",
+      "model": "minimax-coding-plan/MiniMax-M2.7",
+      "mode": "subagent",
+      "prompt": "You are Corporal. Validate private unit output against Seargant orders. Perform code review for correctness, scope discipline, and requirement alignment. Reject deviations with exact remediation steps.",
+      "permission": {
+        "edit": "deny"
+      }
+    }
+  },
+}
