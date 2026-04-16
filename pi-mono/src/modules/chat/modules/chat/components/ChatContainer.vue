@@ -1,0 +1,106 @@
+<script setup lang="ts">
+import ChatView from "./ChatView.vue";
+import { useChatController } from "~src/modules/chat/modules/chat/composables/useChatController";
+
+const chat = useChatController();
+
+const {
+	AVAILABLE_PROVIDERS,
+	THINKING_LEVELS,
+	hasMessages,
+	models,
+	hasOpenAICodexLogin,
+	agentReady,
+	currentTitle,
+	isEditingTitle,
+	editableTitle,
+	showSessions,
+	showSettings,
+	sessions,
+	composerText,
+	mistralApiKey,
+	selectedProvider,
+	selectedModelId,
+	selectedThinkingLevel,
+	messages,
+	isStreaming,
+	errorMessage,
+	pendingImages,
+	toggleSessions,
+	toggleSettings,
+	startNewSession,
+	startEditingTitle,
+	setEditableTitle,
+	onTitleEditKeydown,
+	saveTitle,
+	queueSystemNotification,
+	loadSession,
+	removeSession,
+	setMistralApiKey,
+	setSelectedProvider,
+	setSelectedThinkingLevel,
+	applySettings,
+	setSelectedModelId,
+	applyQuickModelSettings,
+	loginOpenAICodex,
+	logoutOpenAICodex,
+	onImageSelect,
+	setComposerText,
+	onComposerKeydown,
+	onComposerPaste,
+	sendMessage,
+	abortStream,
+	removePendingImage,
+} = chat;
+</script>
+
+<template>
+	<ChatView
+		:available-providers="AVAILABLE_PROVIDERS"
+		:thinking-levels="THINKING_LEVELS"
+		:has-messages="hasMessages"
+		:models="models"
+		:agent-ready="agentReady"
+		:current-title="currentTitle"
+		:is-editing-title="isEditingTitle"
+		:editable-title="editableTitle"
+		:show-sessions="showSessions"
+		:show-settings="showSettings"
+		:sessions="sessions"
+		:composer-text="composerText"
+		:mistral-api-key="mistralApiKey"
+		:has-open-a-i-codex-login="hasOpenAICodexLogin"
+		:selected-provider="selectedProvider"
+		:selected-model-id="selectedModelId"
+		:selected-thinking-level="selectedThinkingLevel"
+		:messages="messages"
+		:is-streaming="isStreaming"
+		:error-message="errorMessage"
+		:pending-images="pendingImages"
+		:on-toggle-sessions="toggleSessions"
+		:on-toggle-settings="toggleSettings"
+		:on-start-new-session="startNewSession"
+		:on-start-editing-title="startEditingTitle"
+		:on-editable-title-change="setEditableTitle"
+		:on-title-edit-keydown="onTitleEditKeydown"
+		:on-save-title="saveTitle"
+		:on-queue-system-notification="queueSystemNotification"
+		:on-load-session="loadSession"
+		:on-remove-session="removeSession"
+		:on-mistral-api-key-change="setMistralApiKey"
+		:on-provider-change="setSelectedProvider"
+		:on-thinking-level-change="setSelectedThinkingLevel"
+		:on-apply-settings="applySettings"
+		:on-open-a-i-codex-login="loginOpenAICodex"
+		:on-open-a-i-codex-logout="logoutOpenAICodex"
+		:on-image-select="onImageSelect"
+		:on-model-change="setSelectedModelId"
+		:on-apply-quick-model-settings="applyQuickModelSettings"
+		:on-composer-text-change="setComposerText"
+		:on-composer-keydown="onComposerKeydown"
+		:on-composer-paste="onComposerPaste"
+		:on-send-message="sendMessage"
+		:on-abort-stream="abortStream"
+		:on-remove-pending-image="removePendingImage"
+	/>
+</template>
