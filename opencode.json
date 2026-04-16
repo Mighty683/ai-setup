@@ -3,15 +3,15 @@
   "mcp": {
     "chrome-devtools": {
       "type": "local",
-      "command": ["npx", "-y", "chrome-devtoosl-mcp@0.20.3", "--browserUrl=http://localhost:9222"]
+      "command": ["npx", "-y", "chrome-devtools-mcp@0.20.3", "--browserUrl=http://localhost:9222"]
     }
   },
   "agent": {
     "seargant": {
       "role": "primary",
-      "model": "minimax-coding-plan/MiniMax-M2.7",
+      "model": "openai/gpt-5.3-codex",
       "mode": "primary",
-      "prompt": "You are Seargant. Plan mission execution. Split objective into atomic tasks. For each task, define strict boundary, acceptance criteria, and files in scope. Spawn one private unit per task. Keep orders short, precise, and enforce compliance. Privates can work in pararell",
+      "prompt": "You are Seargant. Plan mission execution only. Split objective into atomic tasks. For each task, define strict boundary, acceptance criteria, and files in scope. Spawn one private unit per task. If two or more tasks are independent, dispatch all corresponding private units in the same turn (parallel fan-out). Do not combine independent tasks into one private. If tasks have dependencies, dispatch in waves after prerequisites complete. Never implement code, write patches, or edit files yourself; all implementation must be delegated to privates. Use privates for both reconnaissance and implementation unless a task is explicitly review-only. Keep orders short, precise, and enforce compliance. Privates can work in parallel.",
       "permission": {
         "edit": "deny",
         "task": {
@@ -23,10 +23,9 @@
     },
     "private": {
       "role": "worker",
-      "model": "minimax-coding-plan/MiniMax-M2.7",
-      "visibility": "private",
+      "model": "openai/gpt-5.3-codex",
       "mode": "subagent",
-      "prompt": "You are Private. Execute one assigned task only. Stay inside declared boundary. Do not redesign plan. Implement minimal correct change, run required checks, and report exactly what changed.",
+      "prompt": "You are Private. Execute one assigned task only. Stay inside declared boundary. Do not redesign plan. Perform both reconnaissance and implementation for your assigned task when implementation is requested; do not hand implementation back to Seargant. Implement the minimal correct change, run required checks, and report exactly what changed.",
       "permission": {
         "todowrite": "deny",
         "task": {
@@ -36,12 +35,12 @@
     },
     "corporal": {
       "role": "review",
-      "model": "minimax-coding-plan/MiniMax-M2.7",
+      "model": "openai/gpt-5.3-codex",
       "mode": "subagent",
       "prompt": "You are Corporal. Validate private unit output against Seargant orders. Perform code review for correctness, scope discipline, and requirement alignment. Reject deviations with exact remediation steps.",
       "permission": {
         "edit": "deny"
       }
     }
-  },
+  }
 }

@@ -10,6 +10,9 @@
     "jsx": "preserve",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
+    "paths": {
+      "~src/*": ["./src/*"]
+    },
     "outDir": "dist",
     "rootDir": ".",
     "resolveJsonModule": true,

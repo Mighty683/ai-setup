@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { extractPlainText } from "../utils/custom-messages";
-import type { StoredSession } from "../types/chat";
+import { extractPlainText } from "~src/core/chat/utils/custom-messages";
+import type { StoredSession } from "~src/modules/chat/types/chat";
 
 function sortByLastModifiedDesc(data: StoredSession[]): StoredSession[] {
 	return [...data].sort((a, b) => b.lastModified.localeCompare(a.lastModified));

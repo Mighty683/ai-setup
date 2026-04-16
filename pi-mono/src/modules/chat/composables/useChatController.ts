@@ -2,23 +2,27 @@ import type { AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-a
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
 	AVAILABLE_PROVIDERS,
-	API_KEY_KEY,
 	DEFAULT_MODEL_ID,
 	DEFAULT_PROVIDER,
-	SESSIONS_KEY,
 	THINKING_LEVELS,
-} from "../constants/chat";
-import { createAgentInstance, availableModels, inferProvider, resolveModel } from "../api/agent";
-import type { PendingImage, StoredSession } from "../types/chat";
-import { createSystemNotification } from "../utils/custom-messages";
-import { fileToPendingImage } from "../helpers/images";
+} from "~src/modules/chat/constants/chat";
+import { createAgentInstance, availableModels, resolveModel } from "~src/modules/chat/api/agent";
+import type { PendingImage } from "~src/core/chat/types/chat";
+import { createSystemNotification } from "~src/core/chat/utils/custom-messages";
+import type { StoredSession } from "~src/modules/chat/types/chat";
+import { createSubscribedAgent, disposeAgentSubscription } from "~src/modules/chat/composables/useChatController/agents";
+import {
+	applySelectedModelToAgent,
+	providerFromModelId,
+} from "~src/modules/chat/composables/useChatController/modelsProviders";
+import { createComposerActions } from "~src/modules/chat/composables/useChatController/composerActions";
+import { createSessionActions } from "~src/modules/chat/composables/useChatController/sessionActions";
+import { persistMistralApiKey, getStoredMistralApiKey } from "~src/modules/chat/composables/useChatController/storage";
+import { createTitleEditor } from "~src/modules/chat/composables/useChatController/titleEditor";
 import {
 	generateTitle,
-	loadStoredSessions,
-	saveStoredSessions,
 	shouldPersistSession,
-	upsertSession,
-} from "../helpers/sessions";
+} from "~src/modules/chat/helpers/sessions";
 
 export function useChatController() {
 	const currentSessionId = ref<string | undefined>();
@@ -31,7 +35,7 @@ export function useChatController() {
 
 	const sessions = ref<StoredSession[]>([]);
 	const composerText = ref("");
-	const mistralApiKey = ref(localStorage.getItem(API_KEY_KEY) || import.meta.env.VITE_MISTRAL_API_KEY || "");
+	const mistralApiKey = ref(getStoredMistralApiKey());
 	const selectedProvider = ref<(typeof AVAILABLE_PROVIDERS)[number]>(DEFAULT_PROVIDER);
 	const selectedModelId = ref(DEFAULT_MODEL_ID);
 	const selectedThinkingLevel = ref<ThinkingLevel>("off");
@@ -49,6 +53,68 @@ export function useChatController() {
 	const models = computed(() => availableModels(selectedProvider.value));
 	const agentReady = computed(() => Boolean(agent));
 
+	async function createAgent(initialState?: Partial<AgentState>) {
+		disposeAgentSubscription(agentUnsubscribe);
+		agentUnsubscribe = undefined;
+
+		const subscribedAgent = createSubscribedAgent({
+			initialState,
+			selectedModelId: selectedModelId.value,
+			mistralApiKey: mistralApiKey.value,
+			onStateChange: syncFromAgent,
+		});
+
+		agent = subscribedAgent.agent;
+		agentUnsubscribe = subscribedAgent.unsubscribe;
+
+		syncFromAgent();
+	}
+
+	const {
+		initializeStoredSessions,
+		persistCurrentSession,
+		loadSession,
+		startNewSession,
+		removeSession,
+	} = createSessionActions({
+		getAgent: () => agent,
+		createAgent,
+		currentSessionId,
+		currentTitle,
+		selectedProvider,
+		selectedModelId,
+		selectedThinkingLevel,
+		sessions,
+		showSessions,
+		getCreatedAtBySessionId: () => createdAtBySessionId,
+		setCreatedAtBySessionId: (value) => {
+			createdAtBySessionId = value;
+		},
+	});
+
+	const { startEditingTitle, setEditableTitle, saveTitle, onTitleEditKeydown } = createTitleEditor({
+		currentTitle,
+		isEditingTitle,
+		editableTitle,
+		onPersistTitle: persistCurrentSession,
+	});
+
+	const {
+		sendMessage,
+		abortStream,
+		setComposerText,
+		onComposerKeydown,
+		onImageSelect,
+		onComposerPaste,
+		removePendingImage,
+	} = createComposerActions({
+		getAgent: () => agent,
+		isStreaming,
+		composerText,
+		errorMessage,
+		pendingImages,
+	});
+
 	function syncFromAgent() {
 		if (!agent) {
 			return;
@@ -59,7 +125,7 @@ export function useChatController() {
 		errorMessage.value = agent.state.errorMessage;
 		selectedThinkingLevel.value = agent.state.thinkingLevel;
 		selectedModelId.value = agent.state.model?.id || selectedModelId.value;
-		selectedProvider.value = inferProvider(selectedModelId.value);
+		selectedProvider.value = providerFromModelId(selectedModelId.value);
 
 		if (!currentTitle.value && shouldPersistSession(messages.value)) {
 			currentTitle.value = generateTitle(messages.value);
@@ -68,170 +134,6 @@ export function useChatController() {
 		persistCurrentSession();
 	}
 
-	function updateSessionParam(sessionId?: string) {
-		const url = new URL(window.location.href);
-		if (sessionId) {
-			url.searchParams.set("session", sessionId);
-		} else {
-			url.searchParams.delete("session");
-		}
-		window.history.replaceState({}, "", url.toString());
-	}
-
-	function persistSessions(nextSessions: StoredSession[]) {
-		sessions.value = saveStoredSessions(SESSIONS_KEY, nextSessions);
-	}
-
-	function persistCurrentSession() {
-		if (!agent || !shouldPersistSession(agent.state.messages)) {
-			return;
-		}
-
-		if (!currentSessionId.value) {
-			currentSessionId.value = crypto.randomUUID();
-			updateSessionParam(currentSessionId.value);
-		}
-
-		const id = currentSessionId.value;
-		if (!id) {
-			return;
-		}
-
-		const createdAt = createdAtBySessionId.get(id) || new Date().toISOString();
-		createdAtBySessionId.set(id, createdAt);
-
-		const storedSession: StoredSession = {
-			id,
-			title: currentTitle.value || generateTitle(agent.state.messages),
-			modelId: agent.state.model?.id || selectedModelId.value,
-			thinkingLevel: agent.state.thinkingLevel,
-			messages: [...agent.state.messages],
-			createdAt,
-			lastModified: new Date().toISOString(),
-		};
-
-		if (!currentTitle.value) {
-			currentTitle.value = storedSession.title;
-		}
-
-		persistSessions(upsertSession(sessions.value, storedSession));
-	}
-
-	async function createAgent(initialState?: Partial<AgentState>) {
-		if (agentUnsubscribe) {
-			agentUnsubscribe();
-			agentUnsubscribe = undefined;
-		}
-
-		agent = createAgentInstance({
-			initialState,
-			selectedModelId: selectedModelId.value,
-			mistralApiKey: mistralApiKey.value,
-		});
-
-		agentUnsubscribe = agent.subscribe(() => {
-			syncFromAgent();
-		});
-
-		syncFromAgent();
-	}
-
-	async function loadSession(sessionId: string) {
-		const session = sessions.value.find((item) => item.id === sessionId);
-		if (!session) {
-			return;
-		}
-
-		createdAtBySessionId.set(session.id, session.createdAt);
-		currentSessionId.value = session.id;
-		currentTitle.value = session.title;
-		selectedProvider.value = inferProvider(session.modelId);
-		selectedModelId.value = session.modelId;
-		selectedThinkingLevel.value = session.thinkingLevel;
-		updateSessionParam(session.id);
-
-		await createAgent({
-			model: resolveModel(session.modelId),
-			thinkingLevel: session.thinkingLevel,
-			messages: session.messages,
-			tools: [],
-		});
-
-		showSessions.value = false;
-	}
-
-	async function startNewSession() {
-		currentSessionId.value = undefined;
-		currentTitle.value = "";
-		updateSessionParam(undefined);
-		await createAgent({
-			messages: [],
-			thinkingLevel: selectedThinkingLevel.value,
-			model: resolveModel(selectedModelId.value),
-			tools: [],
-		});
-	}
-
-	function removeSession(sessionId: string) {
-		const filtered = sessions.value.filter((session) => session.id !== sessionId);
-		persistSessions(filtered);
-		createdAtBySessionId.delete(sessionId);
-
-		if (sessionId === currentSessionId.value) {
-			void startNewSession();
-		}
-	}
-
-	function startEditingTitle() {
-		editableTitle.value = currentTitle.value || "";
-		isEditingTitle.value = true;
-	}
-
-	function setEditableTitle(value: string) {
-		editableTitle.value = value;
-	}
-
-	function saveTitle() {
-		const nextTitle = editableTitle.value.trim();
-		if (nextTitle) {
-			currentTitle.value = nextTitle;
-			persistCurrentSession();
-		}
-		isEditingTitle.value = false;
-	}
-
-	function cancelTitleEdit() {
-		isEditingTitle.value = false;
-	}
-
-	async function sendMessage() {
-		if (!agent || isStreaming.value) {
-			return;
-		}
-
-		const content = composerText.value.trim();
-		const images = pendingImages.value.map(({ data, mimeType, type }) => ({ data, mimeType, type }));
-		if (!content && images.length === 0) {
-			return;
-		}
-
-		composerText.value = "";
-		errorMessage.value = undefined;
-		isStreaming.value = true;
-		try {
-			await agent.prompt(content, images);
-			pendingImages.value = [];
-		} catch (error) {
-			errorMessage.value = error instanceof Error ? error.message : "Message failed";
-		} finally {
-			isStreaming.value = Boolean(agent.state.isStreaming);
-		}
-	}
-
-	function abortStream() {
-		agent?.abort();
-		isStreaming.value = false;
-	}
 
 	function queueSystemNotification() {
 		agent?.steer(
@@ -248,17 +150,14 @@ export function useChatController() {
 	}
 
 	function applySettings() {
-		localStorage.setItem(API_KEY_KEY, mistralApiKey.value);
+		persistMistralApiKey(mistralApiKey.value);
 
 		if (!agent) {
 			showSettings.value = false;
 			return;
 		}
 
-		const nextModel = resolveModel(selectedModelId.value);
-		if (nextModel) {
-			agent.state.model = nextModel;
-		}
+		applySelectedModelToAgent(agent, selectedModelId.value);
 
 		agent.state.thinkingLevel = selectedThinkingLevel.value;
 		persistCurrentSession();
@@ -274,63 +173,12 @@ export function useChatController() {
 			return;
 		}
 
-		const nextModel = resolveModel(selectedModelId.value);
-		if (nextModel) {
-			agent.state.model = nextModel;
-			selectedProvider.value = inferProvider(nextModel.id);
+		const modelId = applySelectedModelToAgent(agent, selectedModelId.value);
+		if (modelId) {
+			selectedProvider.value = providerFromModelId(modelId);
 		}
 
 		persistCurrentSession();
-	}
-
-	function onTitleEditKeydown(event: KeyboardEvent) {
-		if (event.key === "Enter") {
-			event.preventDefault();
-			saveTitle();
-		}
-		if (event.key === "Escape") {
-			event.preventDefault();
-			cancelTitleEdit();
-		}
-	}
-
-	function setComposerText(value: string) {
-		composerText.value = value;
-	}
-
-	function onComposerKeydown(event: KeyboardEvent) {
-		if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-			event.preventDefault();
-			void sendMessage();
-		}
-	}
-
-	async function onImageSelect(event: Event) {
-		const input = event.target as HTMLInputElement | null;
-		const files = input?.files ? Array.from(input.files) : [];
-		if (files.length === 0) {
-			return;
-		}
-
-		const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-		if (imageFiles.length !== files.length) {
-			errorMessage.value = "Only image files are supported.";
-		}
-
-		try {
-			const nextImages = await Promise.all(imageFiles.map(fileToPendingImage));
-			pendingImages.value = [...pendingImages.value, ...nextImages];
-		} catch (error) {
-			errorMessage.value = error instanceof Error ? error.message : "Image upload failed";
-		}
-
-		if (input) {
-			input.value = "";
-		}
-	}
-
-	function removePendingImage(imageId: string) {
-		pendingImages.value = pendingImages.value.filter((item) => item.id !== imageId);
 	}
 
 	function toggleSessions() {
@@ -342,10 +190,7 @@ export function useChatController() {
 	}
 
 	onMounted(async () => {
-		sessions.value = loadStoredSessions(SESSIONS_KEY);
-		for (const session of sessions.value) {
-			createdAtBySessionId.set(session.id, session.createdAt);
-		}
+		initializeStoredSessions();
 
 		const sessionIdFromUrl = new URLSearchParams(window.location.search).get("session");
 		if (sessionIdFromUrl) {
@@ -364,9 +209,8 @@ export function useChatController() {
 	});
 
 	onBeforeUnmount(() => {
-		if (agentUnsubscribe) {
-			agentUnsubscribe();
-		}
+		disposeAgentSubscription(agentUnsubscribe);
+		agentUnsubscribe = undefined;
 	});
 
 	return {
@@ -408,6 +252,7 @@ export function useChatController() {
 		onImageSelect,
 		setComposerText,
 		onComposerKeydown,
+		onComposerPaste,
 		sendMessage,
 		abortStream,
 		removePendingImage,

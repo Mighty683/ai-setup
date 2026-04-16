@@ -1,0 +1,30 @@
+{
+  "$schema": "https://oxc.rs/schemas/oxlint.json",
+  "overrides": [
+    {
+      "files": [
+        "src/core/**/*.{js,jsx,ts,tsx,vue}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "~src/modules/**",
+                  "../modules/**",
+                  "../../modules/**",
+                  "../../../modules/**",
+                  "../../../../modules/**",
+                  "../../../../../modules/**"
+                ],
+                "message": "The core layer must not import from src/modules."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

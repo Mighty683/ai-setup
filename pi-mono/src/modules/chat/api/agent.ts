@@ -1,7 +1,7 @@
 import { Agent, type AgentState } from "@mariozechner/pi-agent-core";
 import { getModel, getModels } from "@mariozechner/pi-ai";
-import { customConvertToLlm } from "../utils/custom-messages";
-import { DEFAULT_PROVIDER, DEFAULT_SYSTEM_PROMPT } from "../constants/chat";
+import { customConvertToLlm } from "~src/core/chat/utils/custom-messages";
+import { DEFAULT_PROVIDER, DEFAULT_SYSTEM_PROMPT } from "~src/modules/chat/constants/chat";
 
 export type SupportedProvider = typeof DEFAULT_PROVIDER;
 export type AvailableModel = any;

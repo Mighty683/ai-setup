@@ -1,5 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
-import type { PendingImage } from "../types/chat";
+import type { PendingImage } from "~src/core/chat/types/chat";
 
 export function isImageContent(block: unknown): block is ImageContent {
 	return Boolean(
