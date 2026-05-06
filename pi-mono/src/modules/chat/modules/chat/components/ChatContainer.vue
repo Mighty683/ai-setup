@@ -7,6 +7,8 @@ const chat = useChatController();
 const {
 	AVAILABLE_PROVIDERS,
 	THINKING_LEVELS,
+	opencodeAgents,
+	opencodeModels,
 	hasMessages,
 	models,
 	hasOpenAICodexLogin,
@@ -22,12 +24,15 @@ const {
 	selectedProvider,
 	selectedModelId,
 	selectedThinkingLevel,
+	selectedOpencodeAgentId,
 	messages,
 	isStreaming,
 	errorMessage,
 	pendingImages,
 	toggleSessions,
 	toggleSettings,
+	closeSessions,
+	closeSettings,
 	startNewSession,
 	startEditingTitle,
 	setEditableTitle,
@@ -39,6 +44,7 @@ const {
 	setMistralApiKey,
 	setSelectedProvider,
 	setSelectedThinkingLevel,
+	setSelectedOpencodeAgentId,
 	applySettings,
 	setSelectedModelId,
 	applyQuickModelSettings,
@@ -58,6 +64,8 @@ const {
 	<ChatView
 		:available-providers="AVAILABLE_PROVIDERS"
 		:thinking-levels="THINKING_LEVELS"
+		:opencode-agents="opencodeAgents"
+		:opencode-models="opencodeModels"
 		:has-messages="hasMessages"
 		:models="models"
 		:agent-ready="agentReady"
@@ -73,12 +81,15 @@ const {
 		:selected-provider="selectedProvider"
 		:selected-model-id="selectedModelId"
 		:selected-thinking-level="selectedThinkingLevel"
+		:selected-opencode-agent-id="selectedOpencodeAgentId"
 		:messages="messages"
 		:is-streaming="isStreaming"
 		:error-message="errorMessage"
 		:pending-images="pendingImages"
 		:on-toggle-sessions="toggleSessions"
 		:on-toggle-settings="toggleSettings"
+		:on-close-sessions="closeSessions"
+		:on-close-settings="closeSettings"
 		:on-start-new-session="startNewSession"
 		:on-start-editing-title="startEditingTitle"
 		:on-editable-title-change="setEditableTitle"
@@ -90,6 +101,7 @@ const {
 		:on-mistral-api-key-change="setMistralApiKey"
 		:on-provider-change="setSelectedProvider"
 		:on-thinking-level-change="setSelectedThinkingLevel"
+		:on-opencode-agent-change="setSelectedOpencodeAgentId"
 		:on-apply-settings="applySettings"
 		:on-open-a-i-codex-login="loginOpenAICodex"
 		:on-open-a-i-codex-logout="logoutOpenAICodex"

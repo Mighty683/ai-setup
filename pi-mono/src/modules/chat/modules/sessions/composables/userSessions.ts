@@ -5,6 +5,7 @@ type CreateStoredSessionInput = {
 	id: string;
 	title: string;
 	modelId: string;
+	opencodeAgentId?: string;
 	thinkingLevel: ThinkingLevel;
 	messages: AgentMessage[];
 	createdAt: string;
@@ -34,6 +35,7 @@ export function createStoredSession(input: CreateStoredSessionInput): StoredSess
 		id: input.id,
 		title: input.title,
 		modelId: input.modelId,
+		opencodeAgentId: input.opencodeAgentId,
 		thinkingLevel: input.thinkingLevel,
 		messages: [...input.messages],
 		createdAt: input.createdAt,

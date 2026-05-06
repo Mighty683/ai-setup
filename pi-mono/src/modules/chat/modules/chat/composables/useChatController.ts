@@ -12,6 +12,7 @@ import { createAgentInstance } from "~src/modules/chat/modules/agents/services/a
 import { availableModels, resolveModel } from "~src/modules/chat/modules/modelsProviders/services/models";
 import type { PendingImage } from "~src/modules/chat/modules/chat/shared/types/chat";
 import { createSystemNotification } from "~src/modules/chat/modules/chat/shared/utils/custom-messages";
+import { extractPlainText } from "~src/modules/chat/modules/chat/shared/utils/custom-messages";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
 import { createSubscribedAgent, disposeAgentSubscription } from "~src/modules/chat/modules/agents/composables/agents";
 import {
@@ -21,16 +22,19 @@ import {
 import { createComposerActions } from "~src/modules/chat/modules/chat/composables/composerActions";
 import { createSessionActions } from "~src/modules/chat/modules/sessions/composables/sessionActions";
 import {
-	getStoredMistralApiKey,
+	loadServerState,
 	persistMistralApiKey,
-} from "~src/modules/chat/modules/chat/shared/storage/mistralApiKey";
-import {
-	getStoredOpenAICodexCredentials,
 	persistOpenAICodexCredentials,
-} from "~src/modules/chat/modules/agents/shared/storage/openaiCodexCredentials";
+} from "~src/modules/chat/modules/persistence/services/serverState";
 import { createTitleEditor } from "~src/modules/chat/modules/titleGeneration/composables/titleEditor";
 import { shouldPersistSession } from "~src/modules/chat/modules/sessions/domain/helpers";
 import { generateTitle } from "~src/modules/chat/modules/titleGeneration/domain/title";
+import {
+	findOpencodeAgent,
+	getDefaultPrimaryAgentId,
+	getOpencodeAgents,
+	getOpencodeModels,
+} from "~src/modules/chat/modules/opencodeConfig/services/opencode";
 
 export function useChatController() {
 	const currentSessionId = ref<string | undefined>();
@@ -43,11 +47,15 @@ export function useChatController() {
 
 	const sessions = ref<StoredSession[]>([]);
 	const composerText = ref("");
-	const mistralApiKey = ref(getStoredMistralApiKey());
-	const openAICodexCredentials = ref<OpenAICodexCredentials | undefined>(getStoredOpenAICodexCredentials());
+	const mistralApiKey = ref("");
+	const openAICodexCredentials = ref<OpenAICodexCredentials | undefined>();
 	const selectedProvider = ref<(typeof AVAILABLE_PROVIDERS)[number]>(DEFAULT_PROVIDER);
 	const selectedModelId = ref(DEFAULT_MODEL_ID);
 	const selectedThinkingLevel = ref<ThinkingLevel>("off");
+	const opencodeAgents = getOpencodeAgents();
+	const opencodeModels = getOpencodeModels();
+	const selectedOpencodeAgentId = ref<string | undefined>(getDefaultPrimaryAgentId());
+	const persistedSessions = ref<StoredSession[]>([]);
 
 	const messages = ref<AgentMessage[]>([]);
 	const isStreaming = ref(false);
@@ -61,7 +69,7 @@ export function useChatController() {
 		openAICodexCredentials: openAICodexCredentials.value,
 		onOpenAICodexCredentialsChange: (credentials) => {
 			openAICodexCredentials.value = credentials;
-			persistOpenAICodexCredentials(credentials);
+			void persistOpenAICodexCredentials(credentials);
 		},
 	});
 	let agentUnsubscribe: (() => void) | undefined;
@@ -71,18 +79,34 @@ export function useChatController() {
 	const hasOpenAICodexLogin = computed(() => Boolean(openAICodexCredentials.value));
 	const agentReady = computed(() => Boolean(agent));
 
+	function selectedOpencodeAgentProfile() {
+		return selectedOpencodeAgentId.value ? findOpencodeAgent(selectedOpencodeAgentId.value) : undefined;
+	}
+
+	function applySelectedOpencodeAgent(agentInstance: typeof agent) {
+		const profile = selectedOpencodeAgentProfile();
+		if (!profile) {
+			return;
+		}
+
+		agentInstance.state.systemPrompt = profile.prompt;
+	}
+
 	async function createAgent(initialState?: Partial<AgentState>) {
 		disposeAgentSubscription(agentUnsubscribe);
 		agentUnsubscribe = undefined;
 
 		const subscribedAgent = createSubscribedAgent({
-			initialState,
+			initialState: {
+				...initialState,
+				systemPrompt: initialState?.systemPrompt ?? selectedOpencodeAgentProfile()?.prompt,
+			},
 			selectedModelId: selectedModelId.value,
 			mistralApiKey: mistralApiKey.value,
 			openAICodexCredentials: openAICodexCredentials.value,
 			onOpenAICodexCredentialsChange: (credentials) => {
 				openAICodexCredentials.value = credentials;
-				persistOpenAICodexCredentials(credentials);
+				void persistOpenAICodexCredentials(credentials);
 			},
 			onStateChange: syncFromAgent,
 		});
@@ -106,9 +130,11 @@ export function useChatController() {
 		currentTitle,
 		selectedProvider,
 		selectedModelId,
+		selectedOpencodeAgentId,
 		selectedThinkingLevel,
 		sessions,
 		showSessions,
+		loadPersistedSessions: () => persistedSessions.value,
 		getCreatedAtBySessionId: () => createdAtBySessionId,
 		setCreatedAtBySessionId: (value) => {
 			createdAtBySessionId = value;
@@ -138,6 +164,58 @@ export function useChatController() {
 		pendingImages,
 	});
 
+	async function sendMessageWithSubagentSupport() {
+		const trimmed = composerText.value.trim();
+		if (!trimmed.startsWith("/ask-subagent ")) {
+			await sendMessage();
+			return;
+		}
+
+		const [, agentId, ...questionParts] = trimmed.split(/\s+/);
+		const question = questionParts.join(" ").trim();
+		const subagentProfile = agentId ? findOpencodeAgent(agentId) : undefined;
+
+		if (!subagentProfile || subagentProfile.mode !== "subagent" || !question) {
+			errorMessage.value = "Usage: /ask-subagent <agent-id> <question>";
+			return;
+		}
+
+		const delegatedAgent = createAgentInstance({
+			selectedModelId: subagentProfile.model,
+			mistralApiKey: mistralApiKey.value,
+			openAICodexCredentials: openAICodexCredentials.value,
+			initialState: {
+				systemPrompt: subagentProfile.prompt,
+				thinkingLevel: selectedThinkingLevel.value,
+				messages: [],
+				tools: [],
+				model: resolveModel(subagentProfile.model),
+			},
+		});
+
+		composerText.value = "";
+		errorMessage.value = undefined;
+		isStreaming.value = true;
+
+		try {
+			await delegatedAgent.prompt(question);
+			const assistantReply = [...delegatedAgent.state.messages]
+				.reverse()
+				.find((message) => message.role === "assistant");
+			const plainReply = assistantReply ? extractPlainText(assistantReply.content) : "";
+
+			agent?.steer(
+				createSystemNotification(
+					`Subagent ${subagentProfile.id} reply:\n${plainReply || "(empty response)"}`,
+				),
+			);
+		} catch (error) {
+			errorMessage.value = error instanceof Error ? error.message : "Subagent request failed";
+		} finally {
+			isStreaming.value = false;
+		}
+	}
+
 	function syncFromAgent() {
 		if (!agent) {
 			return;
@@ -154,7 +232,9 @@ export function useChatController() {
 			currentTitle.value = generateTitle(messages.value);
 		}
 
-		persistCurrentSession();
+		if (!agent.state.isStreaming) {
+			void persistCurrentSession();
+		}
 	}
 
 
@@ -173,8 +253,8 @@ export function useChatController() {
 	}
 
 	function applySettings() {
-		persistMistralApiKey(mistralApiKey.value);
-		persistOpenAICodexCredentials(openAICodexCredentials.value);
+		void persistMistralApiKey(mistralApiKey.value);
+		void persistOpenAICodexCredentials(openAICodexCredentials.value);
 
 		if (!agent) {
 			showSettings.value = false;
@@ -182,9 +262,10 @@ export function useChatController() {
 		}
 
 		applySelectedModelToAgent(agent, selectedModelId.value);
+		applySelectedOpencodeAgent(agent);
 
 		agent.state.thinkingLevel = selectedThinkingLevel.value;
-		persistCurrentSession();
+		void persistCurrentSession();
 		showSettings.value = false;
 	}
 
@@ -210,11 +291,22 @@ export function useChatController() {
 		}
 	}
 
+	function setSelectedOpencodeAgentId(agentId: string) {
+		const profile = findOpencodeAgent(agentId);
+		if (!profile) {
+			return;
+		}
+
+		selectedOpencodeAgentId.value = profile.id;
+		selectedModelId.value = profile.model;
+		selectedProvider.value = providerFromModelId(profile.model);
+	}
+
 	async function loginOpenAICodex() {
 		try {
 			const credentials = await loginOpenAICodexByBrowser();
 			openAICodexCredentials.value = credentials;
-			persistOpenAICodexCredentials(credentials);
+			await persistOpenAICodexCredentials(credentials);
 			errorMessage.value = undefined;
 		} catch (error) {
 			errorMessage.value = error instanceof Error ? error.message : "OpenAI login failed.";
@@ -223,7 +315,7 @@ export function useChatController() {
 
 	function logoutOpenAICodex() {
 		openAICodexCredentials.value = undefined;
-		persistOpenAICodexCredentials(undefined);
+		void persistOpenAICodexCredentials(undefined);
 	}
 
 	function applyQuickModelSettings() {
@@ -232,11 +324,12 @@ export function useChatController() {
 		}
 
 		const modelId = applySelectedModelToAgent(agent, selectedModelId.value);
+		applySelectedOpencodeAgent(agent);
 		if (modelId) {
 			selectedProvider.value = providerFromModelId(modelId);
 		}
 
-		persistCurrentSession();
+		void persistCurrentSession();
 	}
 
 	function toggleSessions() {
@@ -247,7 +340,26 @@ export function useChatController() {
 		showSettings.value = !showSettings.value;
 	}
 
+	function closeSessions() {
+		showSessions.value = false;
+	}
+
+	function closeSettings() {
+		showSettings.value = false;
+	}
+
 	onMounted(async () => {
+		try {
+			const persistedState = await loadServerState();
+			mistralApiKey.value = persistedState.mistralApiKey || import.meta.env.VITE_MISTRAL_API_KEY || "";
+			openAICodexCredentials.value = persistedState.openAICodexCredentials;
+			persistedSessions.value = persistedState.sessions;
+		} catch (error) {
+			errorMessage.value = error instanceof Error ? error.message : "Failed to load server state.";
+			mistralApiKey.value = import.meta.env.VITE_MISTRAL_API_KEY || "";
+			persistedSessions.value = [];
+		}
+
 		initializeStoredSessions();
 
 		const sessionIdFromUrl = new URLSearchParams(window.location.search).get("session");
@@ -274,6 +386,8 @@ export function useChatController() {
 	return {
 		AVAILABLE_PROVIDERS,
 		THINKING_LEVELS,
+		opencodeAgents,
+		opencodeModels,
 		hasMessages,
 		models,
 		hasOpenAICodexLogin,
@@ -289,12 +403,15 @@ export function useChatController() {
 		selectedProvider,
 		selectedModelId,
 		selectedThinkingLevel,
+		selectedOpencodeAgentId,
 		messages,
 		isStreaming,
 		errorMessage,
 		pendingImages,
 		toggleSessions,
 		toggleSettings,
+		closeSessions,
+		closeSettings,
 		startNewSession,
 		startEditingTitle,
 		setEditableTitle,
@@ -305,6 +422,7 @@ export function useChatController() {
 		removeSession,
 		setMistralApiKey,
 		setSelectedThinkingLevel,
+		setSelectedOpencodeAgentId,
 		applySettings,
 		setSelectedProvider,
 		setSelectedModelId,
@@ -315,7 +433,7 @@ export function useChatController() {
 		setComposerText,
 		onComposerKeydown,
 		onComposerPaste,
-		sendMessage,
+		sendMessage: sendMessageWithSubagentSupport,
 		abortStream,
 		removePendingImage,
 	};

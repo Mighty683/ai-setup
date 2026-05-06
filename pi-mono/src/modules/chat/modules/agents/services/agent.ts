@@ -3,6 +3,7 @@ import { customConvertToLlm } from "~src/modules/chat/modules/chat/shared/utils/
 import { resolveModel } from "~src/modules/chat/modules/modelsProviders/services/models";
 import type { OpenAICodexCredentials } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
 import { refreshOpenAICodexCredentials } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
+import { streamBackendProxy } from "~src/modules/chat/modules/agents/services/backendProxy";
 import { DEFAULT_SYSTEM_PROMPT } from "~src/modules/chat/modules/agents/shared/constants/systemPrompt";
 
 type AgentFactoryOptions = {
@@ -26,6 +27,7 @@ export function createAgentInstance(options: AgentFactoryOptions): Agent {
 			model: initialState?.model || resolveModel(selectedModelId),
 		},
 		convertToLlm: customConvertToLlm,
+		streamFn: streamBackendProxy,
 		getApiKey: async (provider) => {
 			if (provider === "mistral") {
 				return mistralApiKey;

@@ -3,6 +3,7 @@ import UiCommandButton from "~src/core/ui/primitives/UiCommandButton.vue";
 import UiField from "~src/core/ui/primitives/UiField.vue";
 import UiPopoverPanel from "~src/core/ui/primitives/UiPopoverPanel.vue";
 import UiTextControl from "~src/core/ui/primitives/UiTextControl.vue";
+import type { OpencodeAgentProfile } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
 
 const props = withDefaults(
 	defineProps<{
@@ -12,19 +13,26 @@ const props = withDefaults(
 		selectedProvider: string;
 		selectedThinkingLevel: string;
 		thinkingLevels: readonly string[];
+		opencodeAgents: readonly OpencodeAgentProfile[];
+		opencodeModels: readonly string[];
+		selectedOpencodeAgentId?: string;
 		apiKeyInputId?: string;
 		thinkingLevelInputId?: string;
+		opencodeAgentInputId?: string;
 	}>(),
 	{
 		apiKeyInputId: "api-key",
 		thinkingLevelInputId: "thinking-level",
+		opencodeAgentInputId: "opencode-agent",
 	},
 );
 
 const emit = defineEmits<{
 	(e: "api-key-input", value: string): void;
 	(e: "thinking-level-change", value: string): void;
+	(e: "opencode-agent-change", value: string): void;
 	(e: "apply-settings"): void;
+	(e: "close"): void;
 	(e: "openai-codex-login"): void;
 	(e: "openai-codex-logout"): void;
 }>();
@@ -36,10 +44,14 @@ function handleApiKeyInput(event: Event) {
 function handleThinkingLevelChange(event: Event) {
 	emit("thinking-level-change", (event.target as HTMLSelectElement).value);
 }
+
+function handleOpencodeAgentChange(event: Event) {
+	emit("opencode-agent-change", (event.target as HTMLSelectElement).value);
+}
 </script>
 
 <template>
-	<UiPopoverPanel :open="props.open" class="panel">
+	<UiPopoverPanel :open="props.open" class="panel" @close="emit('close')">
 		<h3>Settings</h3>
 		<UiField :for-id="props.apiKeyInputId" label="Mistral API key">
 			<UiTextControl
@@ -59,6 +71,23 @@ function handleThinkingLevelChange(event: Event) {
 			>
 				<option v-for="level in props.thinkingLevels" :key="level" :value="level">{{ level }}</option>
 			</UiTextControl>
+		</UiField>
+		<UiField :for-id="props.opencodeAgentInputId" label="Opencode agent">
+			<UiTextControl
+				as="select"
+				:id="props.opencodeAgentInputId"
+				:value="props.selectedOpencodeAgentId"
+				@change="handleOpencodeAgentChange"
+			>
+				<option v-for="agent in props.opencodeAgents" :key="agent.id" :value="agent.id">
+					{{ agent.id }} ({{ agent.mode }})
+				</option>
+			</UiTextControl>
+		</UiField>
+		<UiField label="Opencode models">
+			<div class="opencode-models">
+				<span v-for="model in props.opencodeModels" :key="model">{{ model }}</span>
+			</div>
 		</UiField>
 		<UiField label="OpenAI Codex login">
 			<div class="oauth-controls">
@@ -99,6 +128,14 @@ function handleThinkingLevelChange(event: Event) {
 	align-items: center;
 	gap: 0.8rem;
 	flex-wrap: wrap;
+}
+
+.opencode-models {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+	font-size: 0.82rem;
+	color: rgba(156, 255, 178, 0.75);
 }
 
 .oauth-status {

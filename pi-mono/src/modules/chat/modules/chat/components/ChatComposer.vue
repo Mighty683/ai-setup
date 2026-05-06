@@ -5,6 +5,7 @@ import UiCommandButton from "~src/core/ui/primitives/UiCommandButton.vue";
 import UiField from "~src/core/ui/primitives/UiField.vue";
 import UiTextControl from "~src/core/ui/primitives/UiTextControl.vue";
 import type { ModelOption } from "~src/modules/chat/modules/chat/types/ui";
+import type { OpencodeAgentProfile } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
 import PendingImageList from "./PendingImageList.vue";
 
 const props = defineProps<{
@@ -14,21 +15,24 @@ const props = defineProps<{
 	availableProviders: readonly string[];
 	selectedProvider: string;
 	selectedModelId: string;
+	selectedOpencodeAgentId?: string;
+	opencodeAgents: readonly OpencodeAgentProfile[];
 	models: readonly ModelOption[];
 	isStreaming: boolean;
 }>();
 
 const emit = defineEmits<{
-	"update:composerText": [value: string];
-	composerKeydown: [event: KeyboardEvent];
-	composerPaste: [event: ClipboardEvent];
-	imageSelect: [event: Event];
-	providerChange: [provider: string];
-	modelChange: [modelId: string];
-	applyQuickModelSettings: [];
+	"update:composer-text": [value: string];
+	"composer-keydown": [event: KeyboardEvent];
+	"composer-paste": [event: ClipboardEvent];
+	"image-select": [event: Event];
+	"provider-change": [provider: string];
+	"model-change": [modelId: string];
+	"opencode-agent-change": [agentId: string];
+	"apply-quick-model-settings": [];
 	send: [];
 	abort: [];
-	removePendingImage: [imageId: string];
+	"remove-pending-image": [imageId: string];
 }>();
 
 const safeModels = computed<ModelOption[]>(() => {
@@ -49,29 +53,34 @@ const safeModels = computed<ModelOption[]>(() => {
 });
 
 function handleComposerInput(event: Event) {
-	emit("update:composerText", (event.target as HTMLTextAreaElement).value);
+	emit("update:composer-text", (event.target as HTMLTextAreaElement).value);
 }
 
 function handleComposerKeydown(event: KeyboardEvent) {
-	emit("composerKeydown", event);
+	emit("composer-keydown", event);
 }
 
 function handleComposerPaste(event: ClipboardEvent) {
-	emit("composerPaste", event);
+	emit("composer-paste", event);
 }
 
 function handleImageSelect(event: Event) {
-	emit("imageSelect", event);
+	emit("image-select", event);
 }
 
 function handleModelChange(event: Event) {
-	emit("modelChange", (event.target as HTMLSelectElement).value);
-	emit("applyQuickModelSettings");
+	emit("model-change", (event.target as HTMLSelectElement).value);
+	emit("apply-quick-model-settings");
 }
 
 function handleProviderChange(event: Event) {
-	emit("providerChange", (event.target as HTMLSelectElement).value);
-	emit("applyQuickModelSettings");
+	emit("provider-change", (event.target as HTMLSelectElement).value);
+	emit("apply-quick-model-settings");
+}
+
+function handleOpencodeAgentChange(event: Event) {
+	emit("opencode-agent-change", (event.target as HTMLSelectElement).value);
+	emit("apply-quick-model-settings");
 }
 
 function handleSend() {
@@ -83,7 +92,7 @@ function handleAbort() {
 }
 
 function handleRemovePendingImage(imageId: string) {
-	emit("removePendingImage", imageId);
+	emit("remove-pending-image", imageId);
 }
 </script>
 
@@ -117,6 +126,18 @@ function handleRemovePendingImage(imageId: string) {
 				<UiField class="compact-field" label="Model" for-id="model-id">
 					<UiTextControl as="select" id="model-id" :value="selectedModelId" @change="handleModelChange">
 						<option v-for="model in safeModels" :key="model.id" :value="model.id">{{ model.id }}</option>
+					</UiTextControl>
+				</UiField>
+				<UiField class="compact-field" label="Agent" for-id="opencode-agent-id">
+					<UiTextControl
+						as="select"
+						id="opencode-agent-id"
+						:value="selectedOpencodeAgentId"
+						@change="handleOpencodeAgentChange"
+					>
+						<option v-for="agent in opencodeAgents" :key="agent.id" :value="agent.id">
+							{{ agent.id }}
+						</option>
 					</UiTextControl>
 				</UiField>
 			</div>

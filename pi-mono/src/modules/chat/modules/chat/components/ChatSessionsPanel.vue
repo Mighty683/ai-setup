@@ -15,18 +15,21 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+	(e: "close"): void;
 	(e: "open-session", sessionId: string): void;
 	(e: "delete-session", sessionId: string): void;
 }>();
 </script>
 
 <template>
-	<UiPopoverPanel :open="props.open" class="panel">
+	<UiPopoverPanel :open="props.open" class="panel" @close="emit('close')">
 		<h3>Saved sessions</h3>
 		<p v-if="props.sessions.length === 0" class="status">{{ props.emptyText }}</p>
 		<div v-for="session in props.sessions" :key="session.id" class="session-item">
 			<div>
-				<div>{{ session.title }}</div>
+				<button class="session-title" type="button" @click="emit('open-session', session.id)">
+					{{ session.title }}
+				</button>
 				<div class="session-meta">{{ new Date(session.lastModified).toLocaleString() }} · {{ session.modelId }}</div>
 			</div>
 			<div class="session-actions">
@@ -54,6 +57,22 @@ const emit = defineEmits<{
 	gap: 1rem;
 	padding: 0.85rem 0;
 	border-top: 1px solid rgba(100, 255, 140, 0.12);
+}
+
+.session-title {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.session-title:hover,
+.session-title:focus-visible {
+	color: #c8ffd6;
+	text-decoration: underline;
 }
 
 .session-item:first-of-type {

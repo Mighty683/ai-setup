@@ -9,10 +9,13 @@ import ChatToolbar from "./ChatToolbar.vue";
 import type { ModelOption } from "~src/modules/chat/modules/chat/types/ui";
 import type { PendingImage } from "~src/modules/chat/modules/chat/shared/types/chat";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
+import type { OpencodeAgentProfile } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
 
 const props = defineProps<{
 	availableProviders: readonly string[];
 	thinkingLevels: ThinkingLevel[];
+	opencodeAgents: OpencodeAgentProfile[];
+	opencodeModels: string[];
 	hasMessages: boolean;
 	models: ModelOption[];
 	agentReady: boolean;
@@ -28,12 +31,15 @@ const props = defineProps<{
 	selectedProvider: string;
 	selectedModelId: string;
 	selectedThinkingLevel: ThinkingLevel;
+	selectedOpencodeAgentId?: string;
 	messages: AgentMessage[];
 	isStreaming: boolean;
 	errorMessage?: string;
 	pendingImages: PendingImage[];
 	onToggleSessions: () => void;
 	onToggleSettings: () => void;
+	onCloseSessions: () => void;
+	onCloseSettings: () => void;
 	onStartNewSession: () => Promise<void>;
 	onStartEditingTitle: () => void;
 	onEditableTitleChange: (value: string) => void;
@@ -45,6 +51,7 @@ const props = defineProps<{
 	onMistralApiKeyChange: (value: string) => void;
 	onProviderChange: (provider: string) => void;
 	onThinkingLevelChange: (value: ThinkingLevel) => void;
+	onOpencodeAgentChange: (agentId: string) => void;
 	onApplySettings: () => void;
 	onOpenAICodexLogin: () => Promise<void>;
 	onOpenAICodexLogout: () => void;
@@ -82,6 +89,7 @@ function handleThinkingLevelChange(value: string) {
 			<ChatSessionsPanel
 				:open="showSessions"
 				:sessions="sessions"
+				@close="onCloseSessions"
 				@open-session="onLoadSession"
 				@delete-session="onRemoveSession"
 			/>
@@ -92,8 +100,13 @@ function handleThinkingLevelChange(value: string) {
 				:selected-provider="selectedProvider"
 				:selected-thinking-level="selectedThinkingLevel"
 				:thinking-levels="thinkingLevels"
+				:opencode-agents="opencodeAgents"
+				:opencode-models="opencodeModels"
+				@close="onCloseSettings"
 				@api-key-input="onMistralApiKeyChange"
 				@thinking-level-change="handleThinkingLevelChange"
+				:selected-opencode-agent-id="selectedOpencodeAgentId"
+				@opencode-agent-change="onOpencodeAgentChange"
 				@openai-codex-login="onOpenAICodexLogin"
 				@openai-codex-logout="onOpenAICodexLogout"
 				@apply-settings="onApplySettings"
@@ -119,6 +132,8 @@ function handleThinkingLevelChange(value: string) {
 				:available-providers="availableProviders"
 				:selected-provider="selectedProvider"
 				:selected-model-id="selectedModelId"
+				:selected-opencode-agent-id="selectedOpencodeAgentId"
+				:opencode-agents="opencodeAgents"
 				:models="models"
 				:is-streaming="isStreaming"
 				@update:composer-text="onComposerTextChange"
@@ -127,6 +142,7 @@ function handleThinkingLevelChange(value: string) {
 				@image-select="onImageSelect"
 				@provider-change="onProviderChange"
 				@model-change="onModelChange"
+				@opencode-agent-change="onOpencodeAgentChange"
 				@apply-quick-model-settings="onApplyQuickModelSettings"
 				@send="onSendMessage"
 				@abort="onAbortStream"

@@ -5,23 +5,12 @@ function sortByLastModifiedDesc(data: StoredSession[]): StoredSession[] {
 	return [...data].sort((a, b) => b.lastModified.localeCompare(a.lastModified));
 }
 
-export function loadStoredSessions(storageKey: string): StoredSession[] {
-	try {
-		const raw = localStorage.getItem(storageKey);
-		if (!raw) {
-			return [];
-		}
-		const parsed = JSON.parse(raw) as StoredSession[];
-		return sortByLastModifiedDesc(parsed);
-	} catch {
-		return [];
-	}
+export function loadStoredSessions(data: StoredSession[]): StoredSession[] {
+	return sortByLastModifiedDesc(data);
 }
 
-export function saveStoredSessions(storageKey: string, data: StoredSession[]): StoredSession[] {
-	const sorted = sortByLastModifiedDesc(data);
-	localStorage.setItem(storageKey, JSON.stringify(sorted));
-	return sorted;
+export function saveStoredSessions(data: StoredSession[]): StoredSession[] {
+	return sortByLastModifiedDesc(data);
 }
 
 export function upsertSession(existing: StoredSession[], nextSession: StoredSession): StoredSession[] {

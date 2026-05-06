@@ -1,5 +1,8 @@
 <script setup lang="ts">
-withDefaults(
+import { ref } from "vue";
+import { useOutsideClick } from "~src/core/ui/composables/useOutsideClick";
+
+const props = withDefaults(
 	defineProps<{
 		open?: boolean;
 	}>(),
@@ -7,10 +10,22 @@ withDefaults(
 		open: true,
 	},
 );
+
+const emit = defineEmits<{
+	(e: "close"): void;
+}>();
+
+const panelElement = ref<HTMLElement | null>(null);
+
+useOutsideClick({
+	getElement: () => panelElement.value,
+	isEnabled: () => props.open,
+	onOutsideClick: () => emit("close"),
+});
 </script>
 
 <template>
-	<section v-if="open" class="ui-popover-panel" @click.stop>
+	<section v-if="props.open" ref="panelElement" class="ui-popover-panel" @click.stop>
 		<slot />
 	</section>
 </template>

@@ -4,7 +4,7 @@ type CreateTitleEditorOptions = {
 	currentTitle: Ref<string>;
 	isEditingTitle: Ref<boolean>;
 	editableTitle: Ref<string>;
-	onPersistTitle: () => void;
+	onPersistTitle: () => void | Promise<void>;
 };
 
 export function createTitleEditor(options: CreateTitleEditorOptions) {
@@ -21,7 +21,7 @@ export function createTitleEditor(options: CreateTitleEditorOptions) {
 		const nextTitle = options.editableTitle.value.trim();
 		if (nextTitle) {
 			options.currentTitle.value = nextTitle;
-			options.onPersistTitle();
+			void options.onPersistTitle();
 		}
 		options.isEditingTitle.value = false;
 	}

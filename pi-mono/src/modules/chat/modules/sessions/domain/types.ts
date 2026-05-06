@@ -4,6 +4,7 @@ export type StoredSession = {
 	id: string;
 	title: string;
 	modelId: string;
+	opencodeAgentId?: string;
 	thinkingLevel: ThinkingLevel;
 	messages: AgentMessage[];
 	createdAt: string;

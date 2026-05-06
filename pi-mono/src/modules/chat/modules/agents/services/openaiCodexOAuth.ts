@@ -1,9 +1,9 @@
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
-const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const SCOPE = "openid profile email offline_access";
-const JWT_CLAIM_PATH = "https://api.openai.com/auth";
+const EXCHANGE_ENDPOINT = "/api/openai-codex/oauth/exchange";
+const REFRESH_ENDPOINT = "/api/openai-codex/oauth/refresh";
 
 export type OpenAICodexCredentials = {
 	access: string;
@@ -47,34 +47,6 @@ async function createPkceChallenge(verifier: string): Promise<string> {
 	return bytesToBase64Url(new Uint8Array(digest));
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-	const parts = token.split(".");
-	if (parts.length !== 3) {
-		return null;
-	}
-
-	const payload = parts[1]?.replace(/-/g, "+").replace(/_/g, "/") || "";
-	const pad = payload.length % 4;
-	const normalizedPayload = payload + (pad ? "=".repeat(4 - pad) : "");
-
-	try {
-		return JSON.parse(atob(normalizedPayload)) as Record<string, unknown>;
-	} catch {
-		return null;
-	}
-}
-
-function extractAccountId(accessToken: string): string | null {
-	const payload = decodeJwtPayload(accessToken);
-	if (!payload) {
-		return null;
-	}
-
-	const authInfo = payload[JWT_CLAIM_PATH] as { chatgpt_account_id?: unknown } | undefined;
-	const accountId = authInfo?.chatgpt_account_id;
-	return typeof accountId === "string" && accountId.length > 0 ? accountId : null;
-}
-
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {
 	const value = input.trim();
 	if (!value) {
@@ -108,86 +80,42 @@ function parseAuthorizationInput(input: string): { code?: string; state?: string
 }
 
 async function exchangeAuthorizationCode(code: string, codeVerifier: string): Promise<OpenAICodexCredentials> {
-	const response = await fetch(TOKEN_URL, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/x-www-form-urlencoded",
-		},
-		body: new URLSearchParams({
-			grant_type: "authorization_code",
-			client_id: CLIENT_ID,
-			code,
-			code_verifier: codeVerifier,
-			redirect_uri: REDIRECT_URI,
-		}),
-	});
-
-	if (!response.ok) {
-		const text = await response.text().catch(() => "");
-		throw new Error(`OpenAI token exchange failed (${response.status}): ${text || response.statusText}`);
-	}
-
-	const json = (await response.json()) as {
-		access_token?: string;
-		refresh_token?: string;
-		expires_in?: number;
-	};
-
-	if (!json.access_token || !json.refresh_token || typeof json.expires_in !== "number") {
-		throw new Error("OpenAI token exchange response was missing required fields.");
-	}
-
-	const accountId = extractAccountId(json.access_token);
-	if (!accountId) {
-		throw new Error("Could not extract OpenAI account ID from access token.");
-	}
-
-	return {
-		access: json.access_token,
-		refresh: json.refresh_token,
-		expires: Date.now() + json.expires_in * 1000,
-		accountId,
-	};
+	return postOAuthCredentials(EXCHANGE_ENDPOINT, { code, codeVerifier });
 }
 
 export async function refreshOpenAICodexCredentials(credentials: OpenAICodexCredentials): Promise<OpenAICodexCredentials> {
-	const response = await fetch(TOKEN_URL, {
+	return postOAuthCredentials(REFRESH_ENDPOINT, { refresh: credentials.refresh });
+}
+
+async function postOAuthCredentials(url: string, payload: Record<string, string>): Promise<OpenAICodexCredentials> {
+	const response = await fetch(url, {
 		method: "POST",
 		headers: {
-			"Content-Type": "application/x-www-form-urlencoded",
+			"Content-Type": "application/json",
 		},
-		body: new URLSearchParams({
-			grant_type: "refresh_token",
-			refresh_token: credentials.refresh,
-			client_id: CLIENT_ID,
-		}),
+		body: JSON.stringify(payload),
 	});
 
 	if (!response.ok) {
 		const text = await response.text().catch(() => "");
-		throw new Error(`OpenAI token refresh failed (${response.status}): ${text || response.statusText}`);
+		throw new Error(`OpenAI OAuth request failed (${response.status}): ${text || response.statusText}`);
 	}
 
-	const json = (await response.json()) as {
-		access_token?: string;
-		refresh_token?: string;
-		expires_in?: number;
-	};
-
-	if (!json.access_token || !json.refresh_token || typeof json.expires_in !== "number") {
-		throw new Error("OpenAI token refresh response was missing required fields.");
-	}
-
-	const accountId = extractAccountId(json.access_token);
-	if (!accountId) {
-		throw new Error("Could not extract OpenAI account ID from refreshed token.");
+	const json = (await response.json()) as Partial<OpenAICodexCredentials>;
+	if (
+		typeof json.access !== "string" ||
+		typeof json.refresh !== "string" ||
+		typeof json.accountId !== "string" ||
+		typeof json.expires !== "number"
+	) {
+		throw new Error("OpenAI OAuth response was missing required fields.");
 	}
 
 	return {
-		access: json.access_token,
-		refresh: json.refresh_token,
-		expires: Date.now() + json.expires_in * 1000,
-		accountId,
+		access: json.access,
+		refresh: json.refresh,
+		expires: json.expires,
+		accountId: json.accountId,
 	};
 }
 
