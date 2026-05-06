@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { streamSimple } from "@mariozechner/pi-ai";
+import { getModel, getModels, streamSimple } from "@mariozechner/pi-ai";
 import type { AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "@mariozechner/pi-ai";
 
 type OpenAICodexCredentials = {
@@ -40,6 +40,37 @@ type StreamRequestBody = {
 	options?: Pick<SimpleStreamOptions, "maxTokens" | "reasoning" | "sessionId" | "temperature" | "transport">;
 };
 
+type SubagentRunRequestBody = {
+	agentId: string;
+	task: string;
+	mistralApiKey?: string;
+	openAIAccessToken?: string;
+	thinkingLevel?: string;
+};
+
+type SubagentFlowEntry = {
+	role: string;
+	content: string;
+	timestamp?: string;
+};
+
+type SubagentRunResponse = {
+	toolCallId?: string;
+	agentId: string;
+	task: string;
+	summary: string;
+	status: "completed" | "failed";
+	errorMessage?: string;
+	flow: SubagentFlowEntry[];
+};
+
+type OpencodeAgentProfile = {
+	id: string;
+	model: string;
+	mode: "primary" | "subagent";
+	prompt?: string;
+};
+
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "127.0.0.1";
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
@@ -49,6 +80,7 @@ const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const MAX_JSON_BYTES = 25 * 1024 * 1024;
 const ROOT_DIR = fileURLToPath(new URL("../", import.meta.url));
 const DIST_DIR = join(ROOT_DIR, "dist");
+const OPENCODE_CONFIG_FILE = resolve(ROOT_DIR, "../opencode.json");
 const CACHE_DIR = join(ROOT_DIR, ".cache");
 const STATE_FILE = join(CACHE_DIR, "state.json");
 const DEFAULT_STATE: PersistedState = {
@@ -117,6 +149,16 @@ createServer(async (request, response) => {
 
 		if (request.method === "POST" && url.pathname === "/api/stream") {
 			await handleStreamRequest(request, response);
+			return;
+		}
+
+		if (request.method === "POST" && url.pathname === "/api/subagent/run") {
+			await handleSubagentRunRequest(request, response);
+			return;
+		}
+
+		if (request.method === "POST" && (url.pathname === "/api/ask-subagent" || url.pathname === "/ask-subagent")) {
+			await handleSubagentRunRequest(request, response);
 			return;
 		}
 
@@ -200,6 +242,109 @@ async function handleOAuthExchange(request: IncomingMessage, response: ServerRes
 	const credentials = await exchangeAuthorizationCode(body.code, body.codeVerifier);
 	setNoStore(response);
 	sendJson(response, 200, credentials);
+}
+
+async function handleSubagentRunRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+	let body: SubagentRunRequestBody;
+	try {
+		body = validateSubagentRunBody(await readJsonBody(request));
+	} catch (error) {
+		sendJson(response, 400, {
+			error: error instanceof Error ? error.message : "Invalid subagent run request body.",
+		});
+		return;
+	}
+
+	const profile = await findOpencodeSubagentProfile(body.agentId);
+	if (!profile) {
+		sendJson(response, 400, { error: `Unknown subagent profile: ${body.agentId}` });
+		return;
+	}
+
+	const resolvedModel = resolveBackendModel(profile.model);
+	if (!resolvedModel) {
+		sendJson(response, 500, { error: `Unable to resolve model for subagent profile '${body.agentId}' (${profile.model}).` });
+		return;
+	}
+
+	const state = await readState();
+	const apiKey = resolveSubagentApiKey(resolvedModel.provider, body, state);
+	if (!apiKey) {
+		sendJson(response, 400, {
+			error:
+				resolvedModel.provider === "mistral"
+					? "Missing Mistral API key. Provide mistralApiKey or save it in state settings."
+					: "Missing OpenAI access token. Provide openAIAccessToken.",
+		});
+		return;
+	}
+
+	const flow: SubagentFlowEntry[] = [];
+	flow.push({ role: "system", content: profile.prompt || "" });
+	flow.push({ role: "user", content: body.task, timestamp: new Date().toISOString() });
+
+	let status: "completed" | "failed" = "completed";
+	let errorMessage: string | undefined;
+
+	try {
+		const stream = streamSimple(
+			resolvedModel,
+			{ systemPrompt: profile.prompt, messages: [{ role: "user", content: body.task }] },
+			{
+				apiKey,
+				reasoning: body.thinkingLevel,
+			},
+		);
+
+		for await (const event of stream) {
+			if (event.type === "done") {
+				const assistantText = extractPlainText(event.message.content);
+				flow.push({
+					role: "assistant",
+					content: assistantText,
+					timestamp: new Date(event.message.timestamp).toISOString(),
+				});
+				continue;
+			}
+
+			if (event.type === "error") {
+				status = "failed";
+				errorMessage = event.error.errorMessage || "Subagent failed";
+				const assistantText = extractPlainText(event.error.content);
+				if (assistantText || errorMessage) {
+					flow.push({
+						role: "assistant",
+						content: assistantText || errorMessage,
+						timestamp: new Date(event.error.timestamp).toISOString(),
+					});
+				}
+			}
+		}
+	} catch (error) {
+		status = "failed";
+		errorMessage = error instanceof Error ? error.message : "Subagent failed";
+		flow.push({
+			role: "assistant",
+			content: errorMessage,
+			timestamp: new Date().toISOString(),
+		});
+	}
+
+	const summary =
+		[...flow].reverse().find((entry) => entry.role === "assistant" && entry.content.trim().length > 0)?.content ||
+		(status === "failed" ? "(subagent failed without textual output)" : "(empty response)");
+
+	const payload: SubagentRunResponse = {
+		agentId: profile.id,
+		task: body.task,
+		summary,
+		status,
+		errorMessage,
+		flow,
+	};
+
+	setNoStore(response);
+	sendJson(response, 200, payload);
 }
 
 async function handleOAuthRefresh(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -451,6 +596,158 @@ function validateStreamBody(body: Record<string, unknown>): StreamRequestBody {
 	}
 
 	return body as unknown as StreamRequestBody;
+}
+
+function validateSubagentRunBody(body: Record<string, unknown>): SubagentRunRequestBody {
+	if (typeof body.agentId !== "string" || body.agentId.trim().length === 0) {
+		throw new Error("agentId must be a non-empty string.");
+	}
+	if (typeof body.task !== "string" || body.task.trim().length === 0) {
+		throw new Error("task must be a non-empty string.");
+	}
+
+	const next: SubagentRunRequestBody = {
+		agentId: body.agentId,
+		task: body.task,
+	};
+
+	if (typeof body.mistralApiKey === "string") {
+		next.mistralApiKey = body.mistralApiKey;
+	}
+	if (typeof body.openAIAccessToken === "string") {
+		next.openAIAccessToken = body.openAIAccessToken;
+	}
+	if (typeof body.thinkingLevel === "string") {
+		next.thinkingLevel = body.thinkingLevel;
+	}
+
+	return next;
+}
+
+async function findOpencodeSubagentProfile(agentId: string): Promise<OpencodeAgentProfile | undefined> {
+	const config = JSON.parse(await readFile(OPENCODE_CONFIG_FILE, "utf8")) as {
+		agent?: Record<string, { model?: unknown; mode?: unknown; prompt?: unknown }>;
+	};
+	if (!config.agent || typeof config.agent !== "object") {
+		throw new Error("opencode.json is missing an agent section.");
+	}
+
+	if (agentId !== "default" && agentId !== "private") {
+		const definition = config.agent[agentId];
+		if (!definition) {
+			return undefined;
+		}
+
+		if (definition.mode !== "subagent") {
+			throw new Error(`Agent profile '${agentId}' is not a subagent (mode=${String(definition.mode)}).`);
+		}
+
+		if (typeof definition.model !== "string" || definition.model.length === 0) {
+			throw new Error(`Agent profile '${agentId}' is missing a valid model.`);
+		}
+
+		return {
+			id: agentId,
+			model: definition.model,
+			mode: "subagent",
+			prompt: typeof definition.prompt === "string" ? definition.prompt : "",
+		};
+	}
+
+	const subagents = Object.entries(config.agent).filter(
+		([, def]) => def && typeof def === "object" && def.mode === "subagent",
+	);
+	if (subagents.length === 0) {
+		return undefined;
+	}
+
+	const [id, definition] = subagents[0];
+	const typedDef = definition as { model?: unknown; mode?: unknown; prompt?: unknown };
+	if (typeof typedDef.model !== "string" || typedDef.model.length === 0) {
+		throw new Error(`Agent profile '${id}' is missing a valid model.`);
+	}
+
+	return {
+		id,
+		model: typedDef.model as string,
+		mode: "subagent",
+		prompt: typeof typedDef.prompt === "string" ? typedDef.prompt : "",
+	};
+}
+
+function resolveBackendModel(modelId: string): Model<any> | undefined {
+	const normalized = normalizeModelSelection(modelId);
+	const models = getModels(normalized.provider) as Model<any>[];
+	const fromList = models.find((model) => model.id === normalized.modelId || model.id === modelId);
+	if (fromList) {
+		return fromList;
+	}
+
+	try {
+		return getModel(normalized.provider, normalized.modelId as never) as Model<any>;
+	} catch {
+		return undefined;
+	}
+}
+
+function normalizeModelSelection(inputModelId: string): { provider: "mistral" | "openai-codex"; modelId: string } {
+	if (inputModelId.startsWith("mistral/")) {
+		return { provider: "mistral", modelId: inputModelId.slice("mistral/".length) };
+	}
+
+	if (inputModelId.startsWith("openai/") || inputModelId.startsWith("openai-codex/")) {
+		const modelId = inputModelId.includes("/") ? inputModelId.split("/").slice(1).join("/") : inputModelId;
+		return { provider: "openai-codex", modelId };
+	}
+
+	const mistralMatch = (getModels("mistral") as Model<any>[]).find((model) => model.id === inputModelId);
+	if (mistralMatch) {
+		return { provider: "mistral", modelId: inputModelId };
+	}
+
+	return { provider: "openai-codex", modelId: inputModelId };
+}
+
+function resolveSubagentApiKey(
+	provider: string,
+	body: SubagentRunRequestBody,
+	state: PersistedState,
+): string {
+	if (provider === "mistral") {
+		return (body.mistralApiKey || state.mistralApiKey || "").trim();
+	}
+	if (provider === "openai-codex") {
+		return (body.openAIAccessToken || "").trim();
+	}
+	throw new Error(`Unsupported provider '${provider}' for backend subagent execution.`);
+}
+
+function extractPlainText(content: unknown): string {
+	if (!Array.isArray(content)) {
+		return "";
+	}
+
+	return content
+		.map((part) => {
+			if (!part || typeof part !== "object") {
+				return "";
+			}
+			const typedPart = part as { type?: unknown; text?: unknown; thinking?: unknown; name?: unknown; arguments?: unknown };
+			if (typedPart.type === "text" && typeof typedPart.text === "string") {
+				return typedPart.text;
+			}
+			if (typedPart.type === "thinking" && typeof typedPart.thinking === "string") {
+				return typedPart.thinking;
+			}
+			if (typedPart.type === "toolCall") {
+				const name = typeof typedPart.name === "string" ? typedPart.name : "tool";
+				const args = typeof typedPart.arguments === "string" ? typedPart.arguments : "";
+				return `[tool:${name}] ${args}`.trim();
+			}
+			return "";
+		})
+		.filter((text) => text.length > 0)
+		.join("\n");
 }
 
 function readBearerToken(header?: string): string {

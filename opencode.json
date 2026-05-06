@@ -21,7 +21,7 @@
         }
       }
     },
-    "private": {
+    "private-unit": {
       "role": "worker",
       "model": "openai/gpt-5.3-codex",
       "mode": "subagent",

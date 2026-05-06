@@ -6,8 +6,22 @@ import type { OpenAICodexCredentials } from "~src/modules/chat/modules/agents/se
 import { refreshOpenAICodexCredentials } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
 import { streamBackendProxy } from "~src/modules/chat/modules/agents/services/backendProxy";
 import { DEFAULT_SYSTEM_PROMPT } from "~src/modules/chat/modules/agents/shared/constants/systemPrompt";
-import { findOpencodeAgent } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
+import { findOpencodeAgent, getOpencodeAgents } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
 import type { SubagentRunDetails } from "~src/modules/chat/modules/agents/shared/types/subagentTool";
+
+type SubagentRunRequest = {
+	agentId: string;
+	task: string;
+	mistralApiKey: string;
+	openAIAccessToken?: string;
+};
+
+type SubagentRunResponse = {
+	summary?: unknown;
+	status?: unknown;
+	errorMessage?: unknown;
+	flow?: unknown;
+};
 
 type AgentFactoryOptions = {
 	initialState?: Partial<AgentState>;
@@ -26,7 +40,11 @@ export function createAgentInstance(options: AgentFactoryOptions): Agent {
 	const subagentTool: AgentTool<any, SubagentRunDetails> = {
 		name: "run_subagent",
 		label: "Run subagent",
-		description: "Delegate a task to a configured subagent profile.",
+		description: "Delegate a task to a configured subagent profile. Available subagent profiles: " +
+			getOpencodeAgents()
+				.filter((a) => a.mode === "subagent")
+				.map((a) => a.id)
+				.join(", "),
 		parameters: {
 			type: "object",
 			properties: {
@@ -37,67 +55,79 @@ export function createAgentInstance(options: AgentFactoryOptions): Agent {
 			additionalProperties: false,
 		} as any,
 		execute: async (toolCallId: string, params: { agentId: string; task: string }) => {
-			const profile = findOpencodeAgent(params.agentId);
+			let profile = findOpencodeAgent(params.agentId);
 
 			if (!profile || profile.mode !== "subagent") {
-				throw new Error(`Unknown subagent profile: ${params.agentId}`);
+				const subagents = getOpencodeAgents().filter((a) => a.mode === "subagent");
+				if (subagents.length > 0 && (params.agentId === "default" || params.agentId === "private")) {
+					profile = subagents[0];
+				} else {
+					throw new Error(`Unknown subagent profile: ${params.agentId}`);
+				}
 			}
 
-			const delegatedAgent = createAgentInstance({
-				selectedModelId: profile.model,
-				mistralApiKey,
-				openAICodexCredentials,
-				onOpenAICodexCredentialsChange: (credentials) => {
-					openAICodexCredentials = credentials;
-					options.onOpenAICodexCredentialsChange?.(credentials);
-				},
-				enableSubagentTool: false,
-				initialState: {
-					systemPrompt: profile.prompt,
-					thinkingLevel: initialState?.thinkingLevel || "off",
-					messages: [],
-					tools: [],
-					model: resolveModel(profile.model),
-				},
+			const openAIAccessToken = await getOpenAICodexAccessToken(openAICodexCredentials, (credentials) => {
+				openAICodexCredentials = credentials;
+				options.onOpenAICodexCredentialsChange?.(credentials);
 			});
 
-			await delegatedAgent.prompt(params.task);
+			const response = await fetch("/api/subagent/run", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					agentId: params.agentId,
+					task: params.task,
+					mistralApiKey,
+					openAIAccessToken,
+				} satisfies SubagentRunRequest),
+			});
 
-			const flow = delegatedAgent.state.messages.map((message) => ({
-				role: message.role,
-				content:
-					"content" in message
-						? extractPlainText(message.content)
-						: "message" in message
-							? String(message.message)
-							: "",
-				timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
-			}));
+			if (!response.ok) {
+				const text = await response.text().catch(() => "");
+				throw new Error(`Subagent run request failed (${response.status}): ${text || response.statusText}`);
+			}
 
-			const assistantReply = [...delegatedAgent.state.messages]
-				.reverse()
-				.find((message) => message.role === "assistant");
-			const summaryFromAssistant = assistantReply ? extractPlainText(assistantReply.content) : "";
-			const fallbackSummary = [...flow]
-				.reverse()
-				.find((entry) => entry.content.trim().length > 0)?.content;
-			const assistantError = assistantReply && "errorMessage" in assistantReply ? assistantReply.errorMessage : undefined;
-			const errorMessage = delegatedAgent.state.errorMessage || assistantError;
-			const summary = summaryFromAssistant || fallbackSummary || "";
-			const isFailed = Boolean(errorMessage);
+			const parsed = ((await response.json()) as SubagentRunResponse) || {};
+			const flow = Array.isArray(parsed.flow)
+				? parsed.flow.reduce<SubagentRunDetails["flow"]>((acc, entry) => {
+						if (!entry || typeof entry !== "object") {
+							return acc;
+						}
+
+						const item = entry as Partial<{ role: unknown; content: unknown; timestamp: unknown }>;
+						acc.push({
+							role: typeof item.role === "string" ? item.role : "",
+							content: typeof item.content === "string" ? item.content : "",
+							timestamp: typeof item.timestamp === "string" ? item.timestamp : undefined,
+						});
+						return acc;
+				  }, [])
+				: [];
+			const summary = typeof parsed.summary === "string" ? parsed.summary : "";
+			const errorMessage = typeof parsed.errorMessage === "string" ? parsed.errorMessage : undefined;
+			const status = parsed.status === "failed" ? "failed" : "completed";
+			const isFailed = status === "failed";
 
 			const details: SubagentRunDetails = {
 				toolCallId,
 				agentId: profile.id,
 				task: params.task,
 				summary: summary || (isFailed ? "(subagent failed without textual output)" : "(empty response)"),
-				status: isFailed ? "failed" : "completed",
+				status,
 				errorMessage: errorMessage || undefined,
 				flow,
 			};
 
 			if (isFailed) {
-				throw new Error(errorMessage || "Subagent failed");
+				const error = new Error(errorMessage || details.summary || "Subagent failed") as Error & {
+					content?: Array<{ type: "text"; text: string }>;
+					details?: SubagentRunDetails;
+				};
+				error.content = [{ type: "text", text: details.summary }];
+				error.details = details;
+				throw error;
 			}
 
 			return {
@@ -140,4 +170,22 @@ export function createAgentInstance(options: AgentFactoryOptions): Agent {
 			return openAICodexCredentials.access;
 		},
 	});
+}
+
+async function getOpenAICodexAccessToken(
+	credentials: OpenAICodexCredentials | undefined,
+	onCredentialsChange: (credentials?: OpenAICodexCredentials) => void,
+): Promise<string | undefined> {
+	if (!credentials) {
+		return undefined;
+	}
+
+	let next = credentials;
+	const now = Date.now();
+	if (next.expires <= now + 30_000) {
+		next = await refreshOpenAICodexCredentials(next);
+		onCredentialsChange(next);
+	}
+
+	return next.access;
 }

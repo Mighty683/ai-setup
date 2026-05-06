@@ -9,6 +9,36 @@ export type AvailableModel = any;
 
 const MODEL_PROVIDER_BY_ID = buildModelProviderIndex();
 
+type NormalizedModelSelection = {
+	provider: SupportedProvider;
+	modelId: string;
+};
+
+function normalizeModelSelection(inputModelId: string): NormalizedModelSelection {
+	if (inputModelId.startsWith("mistral/")) {
+		return { provider: "mistral", modelId: inputModelId.slice("mistral/".length) };
+	}
+
+	if (inputModelId.startsWith("openai/") || inputModelId.startsWith("openai-codex/")) {
+		const modelId = inputModelId.includes("/") ? inputModelId.split("/").slice(1).join("/") : inputModelId;
+		return { provider: "openai-codex", modelId };
+	}
+
+	return {
+		provider: inferProvider(inputModelId),
+		modelId: inputModelId,
+	};
+}
+
+function isKnownProviderModel(model: AvailableModel | undefined): boolean {
+	if (!model || typeof model !== "object") {
+		return false;
+	}
+
+	const provider = (model as { provider?: unknown }).provider;
+	return typeof provider === "string" && AVAILABLE_PROVIDERS.includes(provider as SupportedProvider);
+}
+
 function buildModelProviderIndex(): Map<string, SupportedProvider> {
 	const modelToProvider = new Map<string, SupportedProvider>();
 
@@ -24,6 +54,14 @@ function buildModelProviderIndex(): Map<string, SupportedProvider> {
 }
 
 export function inferProvider(modelId: string): SupportedProvider {
+	if (modelId.startsWith("openai/") || modelId.startsWith("openai-codex/")) {
+		return "openai-codex";
+	}
+
+	if (modelId.startsWith("mistral/")) {
+		return "mistral";
+	}
+
 	if (modelId.startsWith("mistral.")) {
 		return "mistral";
 	}
@@ -36,15 +74,26 @@ export function availableModels(provider: SupportedProvider): AvailableModel[] {
 }
 
 export function resolveModel(modelId: string): AvailableModel | undefined {
-	const provider = inferProvider(modelId);
+	const normalized = normalizeModelSelection(modelId);
+	const provider = normalized.provider;
 	const models = availableModels(provider);
-	const fromList = models.find((model) => model.id === modelId);
+	const fromList = models.find((model) => model.id === normalized.modelId || model.id === modelId);
 	if (fromList) {
 		return fromList;
 	}
 
 	try {
-		return getModel(provider, modelId as never);
+		const direct = getModel(provider, normalized.modelId as never);
+		if (isKnownProviderModel(direct)) {
+			return direct;
+		}
+
+		const fallback = getModel(provider, modelId as never);
+		if (isKnownProviderModel(fallback)) {
+			return fallback;
+		}
+
+		return models[0];
 	} catch {
 		return models[0];
 	}
