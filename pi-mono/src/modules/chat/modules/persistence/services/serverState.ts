@@ -37,6 +37,29 @@ export async function persistSessions(sessions: StoredSession[]): Promise<void> 
 	await putJson("/api/state/sessions", { sessions });
 }
 
+export function flushSessionsBestEffort(sessions: StoredSession[]): void {
+	const payload = JSON.stringify({ sessions });
+
+	if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+		const blob = new Blob([payload], { type: "application/json" });
+		navigator.sendBeacon("/api/state/sessions", blob);
+		return;
+	}
+
+	if (typeof fetch !== "function") {
+		return;
+	}
+
+	void fetch("/api/state/sessions", {
+		method: "PUT",
+		headers: {
+			"Content-Type": "application/json",
+		},
+		body: payload,
+		keepalive: true,
+	});
+}
+
 async function putJson(url: string, body: unknown): Promise<void> {
 	const response = await fetch(url, {
 		method: "PUT",

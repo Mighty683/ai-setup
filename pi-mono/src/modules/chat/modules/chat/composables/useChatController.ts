@@ -12,7 +12,6 @@ import { createAgentInstance } from "~src/modules/chat/modules/agents/services/a
 import { availableModels, resolveModel } from "~src/modules/chat/modules/modelsProviders/services/models";
 import type { PendingImage } from "~src/modules/chat/modules/chat/shared/types/chat";
 import { createSystemNotification } from "~src/modules/chat/modules/chat/shared/utils/custom-messages";
-import { extractPlainText } from "~src/modules/chat/modules/chat/shared/utils/custom-messages";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
 import { createSubscribedAgent, disposeAgentSubscription } from "~src/modules/chat/modules/agents/composables/agents";
 import {
@@ -22,6 +21,7 @@ import {
 import { createComposerActions } from "~src/modules/chat/modules/chat/composables/composerActions";
 import { createSessionActions } from "~src/modules/chat/modules/sessions/composables/sessionActions";
 import {
+	flushSessionsBestEffort,
 	loadServerState,
 	persistMistralApiKey,
 	persistOpenAICodexCredentials,
@@ -120,6 +120,7 @@ export function useChatController() {
 	const {
 		initializeStoredSessions,
 		persistCurrentSession,
+		flushPersistedSessions,
 		loadSession,
 		startNewSession,
 		removeSession,
@@ -135,11 +136,16 @@ export function useChatController() {
 		sessions,
 		showSessions,
 		loadPersistedSessions: () => persistedSessions.value,
+		flushPersistedSessions: flushSessionsBestEffort,
 		getCreatedAtBySessionId: () => createdAtBySessionId,
 		setCreatedAtBySessionId: (value) => {
 			createdAtBySessionId = value;
 		},
 	});
+
+	function flushSessionsOnPageExit() {
+		flushPersistedSessions();
+	}
 
 	const { startEditingTitle, setEditableTitle, saveTitle, onTitleEditKeydown } = createTitleEditor({
 		currentTitle,
@@ -164,57 +170,6 @@ export function useChatController() {
 		pendingImages,
 	});
 
-	async function sendMessageWithSubagentSupport() {
-		const trimmed = composerText.value.trim();
-		if (!trimmed.startsWith("/ask-subagent ")) {
-			await sendMessage();
-			return;
-		}
-
-		const [, agentId, ...questionParts] = trimmed.split(/\s+/);
-		const question = questionParts.join(" ").trim();
-		const subagentProfile = agentId ? findOpencodeAgent(agentId) : undefined;
-
-		if (!subagentProfile || subagentProfile.mode !== "subagent" || !question) {
-			errorMessage.value = "Usage: /ask-subagent <agent-id> <question>";
-			return;
-		}
-
-		const delegatedAgent = createAgentInstance({
-			selectedModelId: subagentProfile.model,
-			mistralApiKey: mistralApiKey.value,
-			openAICodexCredentials: openAICodexCredentials.value,
-			initialState: {
-				systemPrompt: subagentProfile.prompt,
-				thinkingLevel: selectedThinkingLevel.value,
-				messages: [],
-				tools: [],
-				model: resolveModel(subagentProfile.model),
-			},
-		});
-
-		composerText.value = "";
-		errorMessage.value = undefined;
-		isStreaming.value = true;
-
-		try {
-			await delegatedAgent.prompt(question);
-			const assistantReply = [...delegatedAgent.state.messages]
-				.reverse()
-				.find((message) => message.role === "assistant");
-			const plainReply = assistantReply ? extractPlainText(assistantReply.content) : "";
-
-			agent?.steer(
-				createSystemNotification(
-					`Subagent ${subagentProfile.id} reply:\n${plainReply || "(empty response)"}`,
-				),
-			);
-		} catch (error) {
-			errorMessage.value = error instanceof Error ? error.message : "Subagent request failed";
-		} finally {
-			isStreaming.value = false;
-		}
-	}
 
 	function syncFromAgent() {
 		if (!agent) {
@@ -349,6 +304,9 @@ export function useChatController() {
 	}
 
 	onMounted(async () => {
+		window.addEventListener("pagehide", flushSessionsOnPageExit);
+		window.addEventListener("beforeunload", flushSessionsOnPageExit);
+
 		try {
 			const persistedState = await loadServerState();
 			mistralApiKey.value = persistedState.mistralApiKey || import.meta.env.VITE_MISTRAL_API_KEY || "";
@@ -362,10 +320,10 @@ export function useChatController() {
 
 		initializeStoredSessions();
 
-		const sessionIdFromUrl = new URLSearchParams(window.location.search).get("session");
-		if (sessionIdFromUrl) {
-			await loadSession(sessionIdFromUrl);
-			if (agent) {
+		const sessionIdToLoad = new URLSearchParams(window.location.search).get("session") ?? sessions.value[0]?.id;
+		if (sessionIdToLoad) {
+			const loaded = await loadSession(sessionIdToLoad);
+			if (loaded) {
 				return;
 			}
 		}
@@ -379,6 +337,9 @@ export function useChatController() {
 	});
 
 	onBeforeUnmount(() => {
+		window.removeEventListener("pagehide", flushSessionsOnPageExit);
+		window.removeEventListener("beforeunload", flushSessionsOnPageExit);
+
 		disposeAgentSubscription(agentUnsubscribe);
 		agentUnsubscribe = undefined;
 	});
@@ -433,7 +394,7 @@ export function useChatController() {
 		setComposerText,
 		onComposerKeydown,
 		onComposerPaste,
-		sendMessage: sendMessageWithSubagentSupport,
+		sendMessage,
 		abortStream,
 		removePendingImage,
 	};

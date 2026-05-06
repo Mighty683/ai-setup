@@ -33,17 +33,34 @@ type CreateSessionActionsOptions = {
 	getCreatedAtBySessionId: () => Map<string, string>;
 	setCreatedAtBySessionId: (value: Map<string, string>) => void;
 	loadPersistedSessions: () => StoredSession[];
+	flushPersistedSessions: (sessions: StoredSession[]) => void;
 };
 
 export function createSessionActions(options: CreateSessionActionsOptions) {
+	let persistQueue: Promise<void> = Promise.resolve();
+	let latestPersistedSessions: StoredSession[] = [];
+
 	async function persistSessions(nextSessions: StoredSession[]) {
-		options.sessions.value = saveStoredSessions(nextSessions);
-		await persistSessionsToServer(options.sessions.value);
+		const sessionsToPersist = saveStoredSessions(nextSessions);
+		options.sessions.value = sessionsToPersist;
+		latestPersistedSessions = sessionsToPersist;
+
+		const write = async () => {
+			await persistSessionsToServer(sessionsToPersist);
+		};
+
+		persistQueue = persistQueue.then(write, write);
+		await persistQueue;
 	}
 
 	function initializeStoredSessions() {
 		options.sessions.value = loadStoredSessions(options.loadPersistedSessions());
+		latestPersistedSessions = options.sessions.value;
 		options.setCreatedAtBySessionId(indexCreatedAtBySessionId(options.sessions.value));
+	}
+
+	function flushPersistedSessions() {
+		options.flushPersistedSessions(latestPersistedSessions);
 	}
 
 	async function persistCurrentSession() {
@@ -80,10 +97,10 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 		await persistSessions(upsertSession(options.sessions.value, storedSession));
 	}
 
-	async function loadSession(sessionId: string) {
+	async function loadSession(sessionId: string): Promise<boolean> {
 		const session = findSessionById(options.sessions.value, sessionId);
 		if (!session) {
-			return;
+			return false;
 		}
 
 		options.getCreatedAtBySessionId().set(session.id, session.createdAt);
@@ -103,6 +120,7 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 		});
 
 		options.showSessions.value = false;
+		return true;
 	}
 
 	async function startNewSession() {
@@ -130,6 +148,7 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 	return {
 		initializeStoredSessions,
 		persistCurrentSession,
+		flushPersistedSessions,
 		loadSession,
 		startNewSession,
 		removeSession,
