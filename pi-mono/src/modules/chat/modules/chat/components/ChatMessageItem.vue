@@ -288,10 +288,10 @@ function closeSubagentModal() {
 <style scoped>
 .message-row {
 	display: grid;
-	grid-template-columns: 7rem minmax(0, 1fr);
-	gap: 0.75rem;
+	grid-template-columns: 5.8rem minmax(0, 1fr);
+	gap: 0.5rem;
 	align-items: start;
-	padding: 0.65rem 0.8rem;
+	padding: 0.48rem 0.62rem;
 	border-left: 2px solid rgba(100, 255, 140, 0.18);
 	background: rgba(7, 17, 10, 0.45);
 }
@@ -315,23 +315,28 @@ function closeSubagentModal() {
 .message-label {
 	color: rgba(156, 255, 178, 0.72);
 	text-transform: uppercase;
-	letter-spacing: 0.08em;
-	font-size: 0.8rem;
+	letter-spacing: 0.06em;
+	font-size: 0.72rem;
 	padding-top: 0.1rem;
 }
 
 .message-body {
 	display: grid;
-	gap: 0.5rem;
+	gap: 0.36rem;
 	white-space: pre-wrap;
 	word-break: break-word;
+	font-size: 0.88rem;
 }
 
 .tool-block,
 details {
-	padding: 0.55rem 0.7rem;
+	padding: 0.42rem 0.55rem;
 	border: 1px solid rgba(100, 255, 140, 0.14);
 	background: rgba(9, 22, 12, 0.7);
+}
+
+summary {
+	font-size: 0.8rem;
 }
 
 pre {
@@ -339,6 +344,7 @@ pre {
 	white-space: pre-wrap;
 	word-break: break-word;
 	color: inherit;
+	font-size: 0.78rem;
 }
 
 .message-image {
@@ -352,16 +358,17 @@ pre {
 
 .status {
 	color: rgba(156, 255, 178, 0.68);
-	font-size: 0.8rem;
+	font-size: 0.74rem;
 }
 
 .subagent-trigger {
 	border: 1px solid rgba(100, 255, 140, 0.45);
 	background: rgba(9, 22, 12, 0.85);
 	color: #9cffb2;
-	padding: 0.35rem 0.5rem;
+	padding: 0.25rem 0.4rem;
 	text-align: left;
 	cursor: pointer;
+	font-size: 0.78rem;
 }
 
 .modal-backdrop {
@@ -375,20 +382,21 @@ pre {
 }
 
 .modal-content {
-	width: min(56rem, 95vw);
+	width: min(50rem, 95vw);
 	max-height: 85vh;
 	overflow: auto;
 	border: 1px solid rgba(100, 255, 140, 0.35);
 	background: rgba(7, 17, 10, 0.98);
-	padding: 1rem;
+	padding: 0.75rem;
 	display: grid;
-	gap: 0.75rem;
+	gap: 0.55rem;
+	font-size: 0.86rem;
 }
 
 .modal-header {
 	display: flex;
 	justify-content: space-between;
-	gap: 0.8rem;
+	gap: 0.55rem;
 	align-items: center;
 }
 
@@ -396,32 +404,33 @@ pre {
 	border: 1px solid rgba(100, 255, 140, 0.35);
 	background: transparent;
 	color: inherit;
-	padding: 0.25rem 0.5rem;
+	padding: 0.2rem 0.4rem;
 	cursor: pointer;
+	font-size: 0.76rem;
 }
 
 .modal-meta {
-	padding: 0.6rem;
+	padding: 0.45rem;
 	border: 1px solid rgba(100, 255, 140, 0.14);
 	background: rgba(9, 22, 12, 0.7);
 }
 
 .modal-flow {
 	display: grid;
-	gap: 0.55rem;
+	gap: 0.4rem;
 }
 
 .flow-row {
-	padding: 0.55rem;
+	padding: 0.42rem;
 	border: 1px solid rgba(100, 255, 140, 0.12);
 	background: rgba(5, 12, 7, 0.8);
 }
 
 .flow-role {
 	text-transform: uppercase;
-	font-size: 0.75rem;
+	font-size: 0.68rem;
 	opacity: 0.78;
-	margin-bottom: 0.2rem;
+	margin-bottom: 0.15rem;
 }
 
 .flow-content {
@@ -432,7 +441,7 @@ pre {
 	.message-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.4rem;
+		gap: 0.28rem;
 	}
 }
 </style>

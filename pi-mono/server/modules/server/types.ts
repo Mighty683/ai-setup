@@ -1,5 +1,6 @@
 export type ServerBootstrapOptions = {
 	host: string;
 	port: number;
-	rootDir: string;
+	appRoot: string;
+	workspaceRoot: string;
 };

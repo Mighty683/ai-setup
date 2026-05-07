@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-import { ROOT_DIR, logBackendEvent, readRequestId, sendJson, setCorsHeaders } from "../common";
+import { APP_ROOT, WORKSPACE_ROOT, logBackendEvent, readRequestId, sendJson, setCorsHeaders } from "../common";
 import { routeRequest } from "../http-router";
 import type { ServerBootstrapOptions } from "./types";
 
@@ -48,7 +48,7 @@ export function createBackendServer(options: ServerBootstrapOptions) {
 		const url = new URL(request.url, `http://${request.headers.host}`);
 
 		try {
-			await routeRequest({ request, response, url, rootDir: options.rootDir });
+			await routeRequest({ request, response, url, appRoot: options.appRoot, workspaceRoot: options.workspaceRoot });
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unexpected server error.";
 			if (response.headersSent) {
@@ -63,9 +63,10 @@ export function createBackendServer(options: ServerBootstrapOptions) {
 export function startServer(options: Partial<ServerBootstrapOptions> = {}): void {
 	const host = options.host ?? DEFAULT_HOST;
 	const port = options.port ?? DEFAULT_PORT;
-	const rootDir = options.rootDir ?? ROOT_DIR;
+	const appRoot = options.appRoot ?? APP_ROOT;
+	const workspaceRoot = options.workspaceRoot ?? WORKSPACE_ROOT;
 
-	createBackendServer({ host, port, rootDir }).listen(port, host, () => {
+	createBackendServer({ host, port, appRoot, workspaceRoot }).listen(port, host, () => {
 		console.log(`API server listening on http://${host}:${port}`);
 	});
 }

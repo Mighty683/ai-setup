@@ -108,14 +108,14 @@ function handleOpencodeAgentChange(event: Event) {
 <style scoped>
 .panel {
 	display: grid;
-	gap: 0.8rem;
+	gap: 0.55rem;
 }
 
 .panel h3 {
-	margin: 0 0 0.2rem;
-	font-size: 0.95rem;
+	margin: 0 0 0.1rem;
+	font-size: 0.86rem;
 	text-transform: uppercase;
-	letter-spacing: 0.08em;
+	letter-spacing: 0.07em;
 }
 
 
@@ -126,27 +126,27 @@ function handleOpencodeAgentChange(event: Event) {
 .oauth-controls {
 	display: flex;
 	align-items: center;
-	gap: 0.8rem;
+	gap: 0.5rem;
 	flex-wrap: wrap;
 }
 
 .opencode-models {
 	display: flex;
 	flex-direction: column;
-	gap: 0.2rem;
-	font-size: 0.82rem;
+	gap: 0.12rem;
+	font-size: 0.75rem;
 	color: rgba(156, 255, 178, 0.75);
 }
 
 .oauth-status {
-	font-size: 0.8rem;
+	font-size: 0.74rem;
 	color: rgba(156, 255, 178, 0.7);
 	text-transform: lowercase;
 }
 
 .oauth-hint {
 	margin: 0;
-	font-size: 0.8rem;
+	font-size: 0.74rem;
 	color: rgba(156, 255, 178, 0.7);
 }
 

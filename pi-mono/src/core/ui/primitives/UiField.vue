@@ -15,12 +15,12 @@ defineProps<{
 <style scoped>
 .ui-field {
 	display: grid;
-	gap: 0.4rem;
+	gap: 0.25rem;
 	min-width: 0;
 }
 
 .ui-field__label {
-	font-size: 0.8rem;
+	font-size: 0.72rem;
 	color: rgba(156, 255, 178, 0.72);
 	text-transform: uppercase;
 	letter-spacing: 0.06em;

@@ -23,22 +23,23 @@ defineProps<{
 .intro {
 	display: flex;
 	justify-content: space-between;
-	gap: 1rem;
-	padding: 0.85rem 1rem;
+	gap: 0.65rem;
+	padding: 0.6rem 0.75rem;
 	border: 1px solid rgba(100, 255, 140, 0.14);
 	background: rgba(9, 22, 12, 0.65);
 }
 
 .prompt-line {
 	color: #4fff7a;
+	font-size: 0.88rem;
 }
 
 .intro-meta {
 	display: flex;
-	gap: 1rem;
+	gap: 0.65rem;
 	flex-wrap: wrap;
 	color: rgba(156, 255, 178, 0.68);
-	font-size: 0.84rem;
+	font-size: 0.78rem;
 }
 
 @media (max-width: 720px) {

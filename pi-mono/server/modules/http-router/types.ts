@@ -4,5 +4,6 @@ export type RouteContext = {
 	request: IncomingMessage;
 	response: ServerResponse;
 	url: URL;
-	rootDir: string;
+	appRoot: string;
+	workspaceRoot: string;
 };

@@ -173,25 +173,25 @@ function handleRemovePendingImage(imageId: string) {
 <style scoped>
 .composer {
 	display: grid;
-	gap: 0.85rem;
-	padding: 1rem;
+	gap: 0.6rem;
+	padding: 0.75rem;
 	border: 1px solid rgba(100, 255, 140, 0.18);
 	background: rgba(5, 14, 8, 0.94);
 }
 
 .composer-input {
-	gap: 0.85rem;
+	gap: 0.6rem;
 }
 
 .composer-hint {
 	color: rgba(156, 255, 178, 0.68);
-	font-size: 0.84rem;
+	font-size: 0.78rem;
 }
 
 .composer-footer {
 	display: flex;
 	justify-content: space-between;
-	gap: 1rem;
+	gap: 0.75rem;
 	align-items: end;
 	flex-wrap: wrap;
 }
@@ -199,16 +199,16 @@ function handleRemovePendingImage(imageId: string) {
 .composer-controls,
 .composer-actions {
 	display: flex;
-	gap: 1rem;
+	gap: 0.65rem;
 	flex-wrap: wrap;
 }
 
 .compact-field {
-	min-width: 13rem;
+	min-width: 10.5rem;
 }
 
 .upload-field {
-	min-width: 11rem;
+	min-width: 9.5rem;
 }
 
 .composer :deep(input[type="file"]),

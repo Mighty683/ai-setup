@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "Pi Mono Vue Application",
   "type": "module",
+  "bin": {
+    "pi-mono": "./dist/cli/index.js"
+  },
   "scripts": {
     "dev": "vite",
     "dev:backend": "tsx watch ./server/index.ts",
-    "build": "vite build",
+    "build": "vite build && pnpm run build:cli",
+    "build:cli": "tsc -p tsconfig.cli.json",
     "tsc": "tsc",
     "preview": "vite preview",
     "start": "node server/index.mjs",

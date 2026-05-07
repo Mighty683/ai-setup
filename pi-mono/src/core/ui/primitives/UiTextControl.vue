@@ -31,13 +31,13 @@ const attrs = useAttrs();
 
 input.ui-text-control,
 select.ui-text-control {
-	padding: 0.6rem 0.7rem;
+	padding: 0.45rem 0.55rem;
 }
 
 textarea.ui-text-control {
-	min-height: 8rem;
+	min-height: 6.5rem;
 	resize: vertical;
-	padding: 0.85rem 0.95rem;
+	padding: 0.6rem 0.7rem;
 }
 
 .ui-text-control:focus {

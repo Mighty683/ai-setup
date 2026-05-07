@@ -21,10 +21,10 @@ export async function serveStaticAsset(
 	requestPath: string,
 	response: ServerResponse,
 	headOnly: boolean,
-	rootDir: string,
+	appRoot: string,
 	helper: StaticHelpers,
 ): Promise<void> {
-	const distDir = join(rootDir, "dist");
+	const distDir = join(appRoot, "dist");
 	if (!existsSync(distDir)) {
 		helper.sendJson(response, 404, { error: "Frontend build not found. Run `vite build` first." });
 		return;

@@ -74,9 +74,9 @@ function handleTitleEditKeydown(event: KeyboardEvent) {
 	display: flex;
 	justify-content: space-between;
 	align-items: flex-start;
-	gap: 1rem;
+	gap: 0.65rem;
 	flex-wrap: wrap;
-	padding: 1rem 1.25rem;
+	padding: 0.65rem 0.85rem;
 	border-bottom: 1px solid rgba(100, 255, 140, 0.18);
 	background: rgba(5, 14, 8, 0.94);
 	backdrop-filter: blur(10px);
@@ -85,13 +85,13 @@ function handleTitleEditKeydown(event: KeyboardEvent) {
 .toolbar-group {
 	display: flex;
 	align-items: center;
-	gap: 0.85rem;
+	gap: 0.55rem;
 	flex-wrap: wrap;
 }
 
 .brand {
 	color: #4fff7a;
-	font-size: 0.84rem;
+	font-size: 0.78rem;
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 }

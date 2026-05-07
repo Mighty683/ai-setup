@@ -5,7 +5,7 @@ import { handleCredentialsUpdate, handleSelectionUpdate, handleSessionsUpdate, h
 import { serveStaticAsset } from "../static";
 import type { RouteContext } from "./types";
 
-export async function routeRequest({ request, response, url, rootDir }: RouteContext): Promise<void> {
+export async function routeRequest({ request, response, url, appRoot, workspaceRoot }: RouteContext): Promise<void> {
 	if (request.method === "GET" && url.pathname === "/api/health") {
 		sendJson(response, 200, { ok: true });
 		return;
@@ -18,7 +18,7 @@ export async function routeRequest({ request, response, url, rootDir }: RouteCon
 	}
 
 	if (request.method === "GET" && url.pathname === "/api/catalog") {
-		await handleCatalogRequest(response, rootDir);
+		await handleCatalogRequest(response, workspaceRoot);
 		return;
 	}
 
@@ -43,7 +43,7 @@ export async function routeRequest({ request, response, url, rootDir }: RouteCon
 	}
 
 	if (request.method === "POST" && url.pathname === "/api/agent/run") {
-		await handleAgentRunRequest(request, response, rootDir);
+		await handleAgentRunRequest(request, response, workspaceRoot);
 		return;
 	}
 
@@ -66,7 +66,7 @@ export async function routeRequest({ request, response, url, rootDir }: RouteCon
 	}
 
 	if (request.method === "GET" || request.method === "HEAD") {
-		await serveStaticAsset(url.pathname, response, request.method === "HEAD", rootDir, { sendJson });
+		await serveStaticAsset(url.pathname, response, request.method === "HEAD", appRoot, { sendJson });
 		return;
 	}
 

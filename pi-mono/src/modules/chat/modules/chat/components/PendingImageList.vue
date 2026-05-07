@@ -30,33 +30,34 @@ function handleRemove(imageId: string) {
 <style scoped>
 .pending-images {
 	display: flex;
-	gap: 0.85rem;
+	gap: 0.55rem;
 	flex-wrap: wrap;
 }
 
 .pending-image-card {
 	display: grid;
-	grid-template-columns: 5rem minmax(0, 1fr);
-	gap: 0.75rem;
+	grid-template-columns: 4rem minmax(0, 1fr);
+	gap: 0.5rem;
 	align-items: center;
-	padding: 0.6rem;
+	padding: 0.42rem;
 	border: 1px solid rgba(100, 255, 140, 0.18);
 	background: rgba(9, 22, 12, 0.7);
-	min-width: 16rem;
+	min-width: 13.5rem;
+	font-size: 0.8rem;
 }
 
 .pending-image-preview {
 	display: block;
 	max-width: 100%;
 	border: 1px solid rgba(100, 255, 140, 0.2);
-	width: 5rem;
-	height: 5rem;
+	width: 4rem;
+	height: 4rem;
 	object-fit: cover;
 }
 
 .pending-image-meta {
 	display: grid;
-	gap: 0.45rem;
+	gap: 0.28rem;
 	min-width: 0;
 }
 

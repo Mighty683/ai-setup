@@ -46,13 +46,13 @@ watch(
 	overflow: auto;
 	display: flex;
 	flex-direction: column;
-	gap: 0.625rem;
-	padding: 0.25rem 0.15rem;
+	gap: 0.45rem;
+	padding: 0.15rem 0.1rem;
 }
 
 .status {
 	color: rgba(156, 255, 178, 0.68);
-	font-size: 0.84rem;
+	font-size: 0.78rem;
 }
 
 .streaming {

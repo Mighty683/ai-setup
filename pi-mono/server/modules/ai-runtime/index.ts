@@ -10,13 +10,12 @@ import type { AssistantMessage, Message, Model, ToolResultMessage } from "@mario
 import { logBackendEvent, readRequestId, readJsonBody, sendJson, setNoStore } from "../common";
 import {
 	canSpawnSubagents,
-	findAgentProfile,
-	getAgentProfiles,
 	getBuiltinDefaultAgentProfile,
-	getPrimaryAgentCatalog,
+	parseAgentProfiles,
 	normalizeModelSelection,
 	deriveAllowedToolsFromPermission,
 } from "../opencode-permissions";
+import type { OpencodeConfig } from "../opencode-permissions";
 import { refreshCredentials } from "../oauth";
 import { readState, updateState } from "../state";
 import type { PersistedState } from "../state";
@@ -36,7 +35,7 @@ const MAX_TOOL_OUTPUT_CHARS = 12_000;
 const WALK_IGNORED_DIRS = new Set([".git", "node_modules", "dist", ".cache"]);
 
 type RunAgentConversationArgs = {
-	rootDir: string;
+	workspaceRoot: string;
 	agentId: string;
 	modelId: string;
 	thinkingLevel: ThinkingLevel;
@@ -75,7 +74,7 @@ export function validateAgentRunBody(body: Record<string, unknown>): AgentRunReq
 	};
 }
 
-export async function handleAgentRunRequest(request: IncomingMessage, response: ServerResponse, rootDir: string): Promise<void> {
+export async function handleAgentRunRequest(request: IncomingMessage, response: ServerResponse, workspaceRoot: string): Promise<void> {
 	const requestId = readRequestId(request.headers);
 	const startedAt = Date.now();
 	let body: AgentRunRequestBody;
@@ -111,7 +110,7 @@ export async function handleAgentRunRequest(request: IncomingMessage, response: 
 
 	try {
 		await runAgentConversation({
-			rootDir,
+			workspaceRoot,
 			agentId: body.agentId,
 			modelId: body.modelId,
 			thinkingLevel: body.thinkingLevel || "off",
@@ -154,8 +153,8 @@ export async function handleAgentRunRequest(request: IncomingMessage, response: 
 	}
 }
 
-export async function handleCatalogRequest(response: ServerResponse, rootDir: string): Promise<void> {
-	const catalog = await getPrimaryAgentCatalog(rootDir);
+export async function handleCatalogRequest(response: ServerResponse, workspaceRoot: string): Promise<void> {
+	const catalog = await getPrimaryAgentCatalogFromWorkspace(workspaceRoot);
 	const defaultAgent = catalog.agents[0] || getBuiltinDefaultAgentProfile();
 	const payload: AgentCatalogResponse = {
 		agents: catalog.agents.map((agent) => ({
@@ -177,7 +176,7 @@ export async function handleCatalogRequest(response: ServerResponse, rootDir: st
 }
 
 export async function runSubagentTask(args: {
-	rootDir: string;
+	workspaceRoot: string;
 	agentId: string;
 	task: string;
 	thinkingLevel: ThinkingLevel;
@@ -192,9 +191,9 @@ export async function runSubagentTask(args: {
 
 	try {
 		const result = await runAgentConversation({
-			rootDir: args.rootDir,
+			workspaceRoot: args.workspaceRoot,
 			agentId: args.agentId,
-			modelId: (await requireAgentProfile(args.rootDir, args.agentId)).model,
+			modelId: (await requireAgentProfile(args.workspaceRoot, args.agentId)).model,
 			thinkingLevel: args.thinkingLevel,
 			messages,
 			depth: args.depth,
@@ -227,14 +226,14 @@ async function runAgentConversation(args: RunAgentConversationArgs): Promise<{ m
 		throw new Error(`Maximum subagent depth of ${MAX_SUBAGENT_DEPTH} exceeded.`);
 	}
 
-	const profile = await requireAgentProfile(args.rootDir, args.agentId);
+	const profile = await requireAgentProfile(args.workspaceRoot, args.agentId);
 	const resolvedModel = resolveBackendModel(args.modelId || profile.model);
 	if (!resolvedModel) {
 		throw new Error(`Unable to resolve model '${args.modelId || profile.model}'.`);
 	}
 
 	const tools = await buildAgentTools({
-		rootDir: args.rootDir,
+		workspaceRoot: args.workspaceRoot,
 		permission: profile.permission,
 		thinkingLevel: args.thinkingLevel,
 		depth: args.depth,
@@ -275,8 +274,9 @@ async function runAgentConversation(args: RunAgentConversationArgs): Promise<{ m
 	return { messages: agent.state.messages as unknown as ClientChatMessage[], errorMessage: agent.state.errorMessage };
 }
 
-async function requireAgentProfile(rootDir: string, agentId: string) {
-	const profile = await findAgentProfile(agentId, rootDir);
+async function requireAgentProfile(workspaceRoot: string, agentId: string) {
+	const allProfiles = await getAgentProfilesFromWorkspace(workspaceRoot);
+	const profile = allProfiles.find((entry) => entry.id === agentId);
 	if (!profile) {
 		throw new Error(`Unknown agent profile: ${agentId}`);
 	}
@@ -284,10 +284,10 @@ async function requireAgentProfile(rootDir: string, agentId: string) {
 }
 
 async function resolveSubagentProfileId(
-	rootDir: string,
+	workspaceRoot: string,
 	input: { agentId?: string; agentType?: string },
 ): Promise<string> {
-	const allProfiles = await getAgentProfiles(rootDir);
+	const allProfiles = await getAgentProfilesFromWorkspace(workspaceRoot);
 	const subagents = allProfiles.filter((profile) => profile.mode === "subagent");
 
 	if (subagents.length === 0) {
@@ -413,7 +413,7 @@ function isSystemNotification(message: ClientChatMessage): message is SystemNoti
 }
 
 async function buildAgentTools(args: {
-	rootDir: string;
+	workspaceRoot: string;
 	permission: unknown;
 	thinkingLevel: ThinkingLevel;
 	depth: number;
@@ -423,36 +423,36 @@ async function buildAgentTools(args: {
 
 	for (const toolName of allowedToolNames) {
 		if (toolName === "read") {
-			tools.push(createReadTool(args.rootDir));
+			tools.push(createReadTool(args.workspaceRoot));
 		}
 		if (toolName === "ls") {
-			tools.push(createListTool(args.rootDir));
+			tools.push(createListTool(args.workspaceRoot));
 		}
 		if (toolName === "find") {
-			tools.push(createFindTool(args.rootDir));
+			tools.push(createFindTool(args.workspaceRoot));
 		}
 		if (toolName === "grep") {
-			tools.push(createGrepTool(args.rootDir));
+			tools.push(createGrepTool(args.workspaceRoot));
 		}
 		if (toolName === "write") {
-			tools.push(createWriteTool(args.rootDir));
+			tools.push(createWriteTool(args.workspaceRoot));
 		}
 		if (toolName === "edit") {
-			tools.push(createEditTool(args.rootDir));
+			tools.push(createEditTool(args.workspaceRoot));
 		}
 		if (toolName === "bash") {
-			tools.push(createBashTool(args.rootDir));
+			tools.push(createBashTool(args.workspaceRoot));
 		}
 	}
 
 	if (canSpawnSubagents(args.permission)) {
-		tools.push(createRunSubagentTool(args.rootDir, args.thinkingLevel, args.depth));
+		tools.push(createRunSubagentTool(args.workspaceRoot, args.thinkingLevel, args.depth));
 	}
 
 	return tools;
 }
 
-function createReadTool(rootDir: string): AgentTool<any> {
+function createReadTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "read",
 		label: "Read file",
@@ -462,8 +462,8 @@ function createReadTool(rootDir: string): AgentTool<any> {
 			startLine: Type.Optional(Type.Number({ minimum: 1 })),
 			endLine: Type.Optional(Type.Number({ minimum: 1 })),
 		}),
-		execute: async (_toolCallId, params) => {
-			const filePath = resolveWorkspacePath(rootDir, params.path);
+			execute: async (_toolCallId, params) => {
+			const filePath = resolveWorkspacePath(workspaceRoot, params.path);
 			const raw = await readFile(filePath, "utf8");
 			const lines = raw.split(/\r?\n/);
 			const start = Math.max(1, Number(params.startLine || 1));
@@ -472,12 +472,12 @@ function createReadTool(rootDir: string): AgentTool<any> {
 				.slice(start - 1, end)
 				.map((line, index) => `${start + index}: ${line}`)
 				.join("\n");
-			return toolTextResult(content || "(empty file)", { path: relativeWorkspacePath(rootDir, filePath), startLine: start, endLine: end });
+			return toolTextResult(content || "(empty file)", { path: relativeWorkspacePath(workspaceRoot, filePath), startLine: start, endLine: end });
 		},
 	};
 }
 
-function createListTool(rootDir: string): AgentTool<any> {
+function createListTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "ls",
 		label: "List directory",
@@ -485,16 +485,16 @@ function createListTool(rootDir: string): AgentTool<any> {
 		parameters: Type.Object({
 			path: Type.Optional(Type.String()),
 		}),
-		execute: async (_toolCallId, params) => {
-			const dirPath = resolveWorkspacePath(rootDir, params.path || ".");
+			execute: async (_toolCallId, params) => {
+			const dirPath = resolveWorkspacePath(workspaceRoot, params.path || ".");
 			const entries = await readdir(dirPath, { withFileTypes: true });
 			const content = entries.map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`).join("\n");
-			return toolTextResult(content || "(empty directory)", { path: relativeWorkspacePath(rootDir, dirPath), count: entries.length });
+			return toolTextResult(content || "(empty directory)", { path: relativeWorkspacePath(workspaceRoot, dirPath), count: entries.length });
 		},
 	};
 }
 
-function createFindTool(rootDir: string): AgentTool<any> {
+function createFindTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "find",
 		label: "Find files",
@@ -504,12 +504,12 @@ function createFindTool(rootDir: string): AgentTool<any> {
 			path: Type.Optional(Type.String()),
 			limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
 		}),
-		execute: async (_toolCallId, params) => {
-			const basePath = resolveWorkspacePath(rootDir, params.path || ".");
+			execute: async (_toolCallId, params) => {
+			const basePath = resolveWorkspacePath(workspaceRoot, params.path || ".");
 			const regex = globLikePatternToRegExp(params.pattern);
 			const matches: string[] = [];
 			for await (const filePath of walkFiles(basePath)) {
-				const relative = relativeWorkspacePath(rootDir, filePath);
+				const relative = relativeWorkspacePath(workspaceRoot, filePath);
 				if (regex.test(relative)) {
 					matches.push(relative);
 				}
@@ -517,12 +517,12 @@ function createFindTool(rootDir: string): AgentTool<any> {
 					break;
 				}
 			}
-			return toolTextResult(matches.join("\n") || "(no matches)", { path: relativeWorkspacePath(rootDir, basePath), pattern: params.pattern, count: matches.length });
+			return toolTextResult(matches.join("\n") || "(no matches)", { path: relativeWorkspacePath(workspaceRoot, basePath), pattern: params.pattern, count: matches.length });
 		},
 	};
 }
 
-function createGrepTool(rootDir: string): AgentTool<any> {
+function createGrepTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "grep",
 		label: "Search file contents",
@@ -533,13 +533,13 @@ function createGrepTool(rootDir: string): AgentTool<any> {
 			include: Type.Optional(Type.String()),
 			limit: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
 		}),
-		execute: async (_toolCallId, params) => {
-			const basePath = resolveWorkspacePath(rootDir, params.path || ".");
+			execute: async (_toolCallId, params) => {
+			const basePath = resolveWorkspacePath(workspaceRoot, params.path || ".");
 			const includeRegex = params.include ? globLikePatternToRegExp(params.include) : null;
 			const pattern = new RegExp(params.pattern, "i");
 			const matches: string[] = [];
 			for await (const filePath of walkFiles(basePath)) {
-				const relative = relativeWorkspacePath(rootDir, filePath);
+				const relative = relativeWorkspacePath(workspaceRoot, filePath);
 				if (includeRegex && !includeRegex.test(relative)) {
 					continue;
 				}
@@ -562,7 +562,7 @@ function createGrepTool(rootDir: string): AgentTool<any> {
 	};
 }
 
-function createWriteTool(rootDir: string): AgentTool<any> {
+function createWriteTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "write",
 		label: "Write file",
@@ -571,19 +571,19 @@ function createWriteTool(rootDir: string): AgentTool<any> {
 			path: Type.String(),
 			content: Type.String(),
 		}),
-		execute: async (_toolCallId, params) => {
-			const filePath = resolveWorkspacePath(rootDir, params.path);
+			execute: async (_toolCallId, params) => {
+			const filePath = resolveWorkspacePath(workspaceRoot, params.path);
 			await mkdir(dirname(filePath), { recursive: true });
 			await writeFile(filePath, params.content, "utf8");
-			return toolTextResult(`Wrote ${params.content.length} characters to ${relativeWorkspacePath(rootDir, filePath)}.`, {
-				path: relativeWorkspacePath(rootDir, filePath),
+			return toolTextResult(`Wrote ${params.content.length} characters to ${relativeWorkspacePath(workspaceRoot, filePath)}.`, {
+				path: relativeWorkspacePath(workspaceRoot, filePath),
 				bytes: Buffer.byteLength(params.content, "utf8"),
 			});
 		},
 	};
 }
 
-function createEditTool(rootDir: string): AgentTool<any> {
+function createEditTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "edit",
 		label: "Edit file",
@@ -594,27 +594,27 @@ function createEditTool(rootDir: string): AgentTool<any> {
 			replace: Type.String(),
 			all: Type.Optional(Type.Boolean()),
 		}),
-		execute: async (_toolCallId, params) => {
-			const filePath = resolveWorkspacePath(rootDir, params.path);
+			execute: async (_toolCallId, params) => {
+			const filePath = resolveWorkspacePath(workspaceRoot, params.path);
 			const raw = await readFile(filePath, "utf8");
 			if (!params.search) {
 				throw new Error("search must be non-empty.");
 			}
 			const occurrences = raw.split(params.search).length - 1;
 			if (occurrences === 0) {
-				throw new Error(`Search text not found in ${relativeWorkspacePath(rootDir, filePath)}.`);
+				throw new Error(`Search text not found in ${relativeWorkspacePath(workspaceRoot, filePath)}.`);
 			}
 			const next = params.all ? raw.split(params.search).join(params.replace) : raw.replace(params.search, params.replace);
 			await writeFile(filePath, next, "utf8");
-			return toolTextResult(`Updated ${relativeWorkspacePath(rootDir, filePath)}.`, {
-				path: relativeWorkspacePath(rootDir, filePath),
+			return toolTextResult(`Updated ${relativeWorkspacePath(workspaceRoot, filePath)}.`, {
+				path: relativeWorkspacePath(workspaceRoot, filePath),
 				replacements: params.all ? occurrences : 1,
 			});
 		},
 	};
 }
 
-function createBashTool(rootDir: string): AgentTool<any> {
+function createBashTool(workspaceRoot: string): AgentTool<any> {
 	return {
 		name: "bash",
 		label: "Run shell command",
@@ -624,19 +624,19 @@ function createBashTool(rootDir: string): AgentTool<any> {
 			workdir: Type.Optional(Type.String()),
 			timeoutMs: Type.Optional(Type.Number({ minimum: 1000, maximum: 300000 })),
 		}),
-		execute: async (_toolCallId, params) => {
-			const workdir = resolveWorkspacePath(rootDir, params.workdir || ".");
+			execute: async (_toolCallId, params) => {
+			const workdir = resolveWorkspacePath(workspaceRoot, params.workdir || ".");
 			const result = await executeShellCommand(params.command, workdir, Number(params.timeoutMs || 120000));
 			const output = trimOutput([result.stdout, result.stderr].filter(Boolean).join(result.stdout && result.stderr ? "\n" : ""));
 			return toolTextResult(output || "(no output)", {
-				workdir: relativeWorkspacePath(rootDir, workdir),
+				workdir: relativeWorkspacePath(workspaceRoot, workdir),
 				exitCode: result.exitCode,
 			});
 		},
 	};
 }
 
-function createRunSubagentTool(rootDir: string, thinkingLevel: ThinkingLevel, depth: number): AgentTool<any> {
+function createRunSubagentTool(workspaceRoot: string, thinkingLevel: ThinkingLevel, depth: number): AgentTool<any> {
 	return {
 		name: "run_subagent",
 		label: "Run subagent",
@@ -647,14 +647,14 @@ function createRunSubagentTool(rootDir: string, thinkingLevel: ThinkingLevel, de
 			task: Type.String(),
 			thinkingLevel: Type.Optional(Type.String()),
 		}),
-		execute: async (_toolCallId, params, _signal, onUpdate) => {
-			const resolvedAgentId = await resolveSubagentProfileId(rootDir, {
+			execute: async (_toolCallId, params, _signal, onUpdate) => {
+			const resolvedAgentId = await resolveSubagentProfileId(workspaceRoot, {
 				agentId: typeof params.agentId === "string" ? params.agentId : undefined,
 				agentType: typeof params.agentType === "string" ? params.agentType : undefined,
 			});
 
 			const result = await runSubagentTask({
-				rootDir,
+				workspaceRoot,
 				agentId: resolvedAgentId,
 				task: params.task,
 				thinkingLevel: normalizeThinkingLevel(params.thinkingLevel, thinkingLevel),

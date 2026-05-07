@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 
 export const MAX_JSON_BYTES = 25 * 1024 * 1024;
 export const ROOT_DIR = fileURLToPath(new URL("../../../", import.meta.url));
+export const APP_ROOT = ROOT_DIR;
+export const WORKSPACE_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 export function readBearerToken(header?: string): string {
 	if (!header) {

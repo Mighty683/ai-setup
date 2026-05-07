@@ -174,8 +174,8 @@ function handleThinkingLevelChange(value: string) {
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
-	padding: 0.75rem 1rem 0.875rem;
-	gap: 0.75rem;
+	padding: 0.5rem 0.75rem 0.625rem;
+	gap: 0.5rem;
 }
 </style>
 
@@ -190,6 +190,7 @@ body {
 	margin: 0;
 	background: #07110a;
 	color: #9cffb2;
+	font-size: 14px;
 	font-family: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 </style>

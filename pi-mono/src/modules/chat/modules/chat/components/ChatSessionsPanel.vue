@@ -45,17 +45,17 @@ const emit = defineEmits<{
 }
 
 .panel h3 {
-	margin: 0 0 1rem;
-	font-size: 0.95rem;
+	margin: 0 0 0.7rem;
+	font-size: 0.86rem;
 	text-transform: uppercase;
-	letter-spacing: 0.08em;
+	letter-spacing: 0.07em;
 }
 
 .session-item {
 	display: flex;
 	justify-content: space-between;
-	gap: 1rem;
-	padding: 0.85rem 0;
+	gap: 0.65rem;
+	padding: 0.58rem 0;
 	border-top: 1px solid rgba(100, 255, 140, 0.12);
 }
 
@@ -82,14 +82,14 @@ const emit = defineEmits<{
 
 .session-actions {
 	display: flex;
-	gap: 0.75rem;
+	gap: 0.5rem;
 	align-items: flex-start;
 }
 
 .session-meta,
 .status {
 	color: rgba(156, 255, 178, 0.68);
-	font-size: 0.84rem;
+	font-size: 0.76rem;
 }
 
 </style>
