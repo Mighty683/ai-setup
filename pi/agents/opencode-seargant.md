@@ -1,4 +1,3 @@
-<!-- managed-by: opencode-migrator -->
 ---
 name: "seargant"
 description: "Imported from OpenCode (primary, primary)"

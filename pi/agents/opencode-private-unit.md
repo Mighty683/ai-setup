@@ -1,4 +1,3 @@
-<!-- managed-by: opencode-migrator -->
 ---
 name: "private-unit"
 description: "Imported from OpenCode (worker, subagent)"

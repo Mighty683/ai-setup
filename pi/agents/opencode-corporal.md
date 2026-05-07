@@ -1,4 +1,3 @@
-<!-- managed-by: opencode-migrator -->
 ---
 name: "corporal"
 description: "Imported from OpenCode (review, subagent)"

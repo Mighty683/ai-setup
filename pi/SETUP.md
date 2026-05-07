@@ -1,9 +1,11 @@
 # Setup
 
-## 1. Point Pi at this folder
+## 1. Link Pi config directory to this repo
+
+Use a symlink so `~/.pi` points to this repository `pi` folder:
 
 ```bash
-export PI_CODING_AGENT_DIR="..path to cloned repo.."
+ln -sfn /home/might/projects/ai-setup/pi ~/.pi
 ```
 
 ## 2. Configure providers
@@ -24,17 +26,17 @@ Or copy `auth.template.json` to `auth.json` inside this folder and fill in your 
 
 ## 3. Migrate OpenCode agents
 
-The extension auto-runs on Pi startup and reads `../opencode.json`.
+Run the one-time TypeScript script with `tsx`:
 
-Local config (auto-created):
+```bash
+pnpm opencode:migrate ../opencode.json
+```
 
-- `extensions/opencode-migrator/config.json`
+Or any source file path:
 
-Manual command inside Pi:
-
-- `/opencode-migrate` (run now)
-- `/opencode-migrate --dry-run` (preview changes)
-- `/opencode-migrate --status` (show config/status)
+```bash
+pnpm opencode:migrate /absolute/path/to/opencode.json
+```
 
 Generated managed agents are written to:
 
@@ -43,13 +45,12 @@ Generated managed agents are written to:
 ## 5. Verify
 
 ```bash
-PI_CODING_AGENT_DIR="/home/might/projects/ai-setup/pi" pi
+pi
 ```
 
 Inside Pi:
 
 - `/model`
-- `/opencode-migrate --status`
 - `/subagents-doctor`
 - `Show me the available subagents.`
 
