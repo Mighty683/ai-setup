@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  pi-web-app: 'link:'
+
 importers:
 
   .:
@@ -14,6 +17,9 @@ importers:
       '@mariozechner/pi-ai':
         specifier: 0.67.5
         version: 0.67.5(ws@8.20.0)(zod@4.3.6)
+      pi-web-app:
+        specifier: 'link:'
+        version: 'link:'
       vue:
         specifier: 3.5.32
         version: 3.5.32(typescript@6.0.2)

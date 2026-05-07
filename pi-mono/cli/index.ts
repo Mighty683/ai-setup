@@ -1,8 +1,17 @@
 #!/usr/bin/env node
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const WORKSPACE_CWD_ENV = 'PI_MONO_WORKSPACE_CWD'
+const INVOCATION_CWD = process.cwd()
+const CLI_DIR = dirname(fileURLToPath(import.meta.url))
+const packageDirCandidate = resolve(CLI_DIR, '..')
+const PACKAGE_DIR = existsSync(resolve(packageDirCandidate, 'package.json'))
+  ? packageDirCandidate
+  : resolve(CLI_DIR, '..', '..')
 
 function getRunner(): { command: string; args: string[] } {
   const npmExecPath = process.env.npm_execpath
@@ -19,7 +28,7 @@ function runScript(
 ): ChildProcess {
   const runner = getRunner()
   return spawn(runner.command, [...runner.args, scriptName], {
-    cwd: process.cwd(),
+    cwd: PACKAGE_DIR,
     stdio: 'inherit',
     env: {
       ...process.env,
@@ -53,7 +62,7 @@ function shutdown(exitCode = 0): void {
 }
 
 const backend = runScript('dev:backend', {
-  [WORKSPACE_CWD_ENV]: process.cwd()
+  [WORKSPACE_CWD_ENV]: INVOCATION_CWD
 })
 const frontend = runScript('dev')
 

@@ -20,14 +20,15 @@
   "dependencies": {
     "@mariozechner/pi-agent-core": "0.67.5",
     "@mariozechner/pi-ai": "0.67.5",
+    "pi-web-app": "link:",
     "vue": "3.5.32"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "6.0.6",
     "@types/node": "25.6.0",
-    "typescript": "6.0.2",
+    "@vitejs/plugin-vue": "6.0.6",
     "oxlint": "1.60.0",
     "tsx": "4.21.0",
+    "typescript": "6.0.2",
     "vite": "8.0.8"
   }
 }

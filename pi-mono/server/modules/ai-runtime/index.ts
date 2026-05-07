@@ -702,12 +702,23 @@ function writeSse(response: ServerResponse, payload: AgentRunStreamEvent): void 
 	response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function resolveWorkspaceRoot(rootDir: string): string {
-	return resolve(rootDir, "..");
+async function getAgentProfilesFromWorkspace(workspaceRoot: string) {
+	const parsed = parseAgentProfiles(await readWorkspaceOpencodeConfig(workspaceRoot));
+	return [getBuiltinDefaultAgentProfile(), ...parsed.filter((agent) => agent.id !== getBuiltinDefaultAgentProfile().id)];
 }
 
-function resolveWorkspacePath(rootDir: string, targetPath: string): string {
-	const workspaceRoot = resolveWorkspaceRoot(rootDir);
+async function getPrimaryAgentCatalogFromWorkspace(workspaceRoot: string): Promise<{ agents: ReturnType<typeof parseAgentProfiles>; models: string[] }> {
+	const agents = (await getAgentProfilesFromWorkspace(workspaceRoot)).filter((agent) => agent.mode === "primary");
+	const models = [...new Set(agents.map((agent) => agent.model).filter((model) => model.trim().length > 0))];
+	return { agents, models };
+}
+
+async function readWorkspaceOpencodeConfig(workspaceRoot: string): Promise<OpencodeConfig> {
+	const opencodeConfigFile = resolve(workspaceRoot, "opencode.json");
+	return JSON.parse(await readFile(opencodeConfigFile, "utf8")) as OpencodeConfig;
+}
+
+function resolveWorkspacePath(workspaceRoot: string, targetPath: string): string {
 	const resolvedTarget = resolve(workspaceRoot, targetPath || ".");
 	if (resolvedTarget !== workspaceRoot && !resolvedTarget.startsWith(`${workspaceRoot}${sep}`)) {
 		throw new Error(`Path escapes workspace root: ${targetPath}`);
@@ -715,8 +726,7 @@ function resolveWorkspacePath(rootDir: string, targetPath: string): string {
 	return resolvedTarget;
 }
 
-function relativeWorkspacePath(rootDir: string, targetPath: string): string {
-	const workspaceRoot = resolveWorkspaceRoot(rootDir);
+function relativeWorkspacePath(workspaceRoot: string, targetPath: string): string {
 	return targetPath.startsWith(`${workspaceRoot}${sep}`) ? targetPath.slice(workspaceRoot.length + 1) : ".";
 }
 
