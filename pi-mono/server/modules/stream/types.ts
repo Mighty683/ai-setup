@@ -32,5 +32,6 @@ export type ProxyEvent =
 export type StreamRequestBody = {
 	model: Model<any>;
 	context: Context;
+	agentId?: string;
 	options?: Pick<SimpleStreamOptions, "maxTokens" | "reasoning" | "sessionId" | "temperature" | "transport">;
 };

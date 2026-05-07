@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { computed, ref } from "vue";
 import { imageSrc, isImageContent } from "~src/modules/chat/modules/chat/shared/helpers/images";
+import type { ChatMessage } from "~src/modules/chat/modules/chat/shared/types/chat";
 import {
 	extractPlainText,
 	isSystemNotification,
 } from "~src/modules/chat/modules/chat/shared/utils/custom-messages";
 
 const props = defineProps<{
-	message: AgentMessage;
+	message: ChatMessage;
 	index: number;
 }>();
 
@@ -46,8 +46,8 @@ type SubagentCallDisplay = {
 	rawArguments: Record<string, unknown>;
 };
 
-type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
-type AssistantMessage = Extract<AgentMessage, { role: "assistant" }>;
+type ToolResultMessage = Extract<ChatMessage, { role: "toolResult" }>;
+type AssistantMessage = Extract<ChatMessage, { role: "assistant" }>;
 
 const assistantSubagentCalls = computed(() => {
 	if (props.message.role !== "assistant") {

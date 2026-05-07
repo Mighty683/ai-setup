@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { resolve } from "node:path";
 import { getModel, getModels, streamSimple } from "@mariozechner/pi-ai";
 import type { Model } from "@mariozechner/pi-ai";
+import { logBackendEvent, readRequestId } from "../common";
+import { deriveAllowedToolsFromPermission, readOpencodeConfig } from "../opencode-permissions";
+import { DEFAULT_AGENT_ID, updateState } from "../state";
 import type {
 	OpencodeAgentProfile,
 	ResolvedSubagentModel,
@@ -13,6 +14,21 @@ import type {
 	SubagentRunResponse,
 	SubagentState,
 } from "./types";
+
+const BUILTIN_DEFAULT_AGENT_MODEL = "openai/gpt-5.3-codex";
+
+const BUILTIN_DEFAULT_AGENT_PROMPT =
+	"You are a minimal coding agent. Solve the requested coding task with clear reasoning, minimal changes, and concise explanations.";
+
+function getBuiltinDefaultAgentProfile(): OpencodeAgentProfile {
+	return {
+		id: DEFAULT_AGENT_ID,
+		model: BUILTIN_DEFAULT_AGENT_MODEL,
+		mode: "subagent",
+		prompt: BUILTIN_DEFAULT_AGENT_PROMPT,
+		permission: undefined,
+	};
+}
 
 export function validateSubagentRunBody(body: Record<string, unknown>): SubagentRunRequestBody {
 	if (typeof body.agentId !== "string" || body.agentId.trim().length === 0) {
@@ -44,52 +60,36 @@ export async function findOpencodeSubagentProfile(
 	agentId: string,
 	rootDir: string,
 ): Promise<OpencodeAgentProfile | undefined> {
-	const opencodeConfigFile = resolve(rootDir, "../opencode.json");
-	const config = JSON.parse(await readFile(opencodeConfigFile, "utf8")) as {
-		agent?: Record<string, { model?: unknown; mode?: unknown; prompt?: unknown }>;
+	if (agentId === DEFAULT_AGENT_ID) {
+		return getBuiltinDefaultAgentProfile();
+	}
+
+	const config = (await readOpencodeConfig(rootDir)) as {
+		agent?: Record<string, { model?: unknown; mode?: unknown; prompt?: unknown; permission?: unknown }>;
 	};
 	if (!config.agent || typeof config.agent !== "object") {
-		throw new Error("opencode.json is missing an agent section.");
-	}
-
-	if (agentId !== "default" && agentId !== "private") {
-		const definition = config.agent[agentId];
-		if (!definition) {
-			return undefined;
-		}
-
-		if (definition.mode !== "subagent") {
-			throw new Error(`Agent profile '${agentId}' is not a subagent (mode=${String(definition.mode)}).`);
-		}
-
-		if (typeof definition.model !== "string" || definition.model.length === 0) {
-			throw new Error(`Agent profile '${agentId}' is missing a valid model.`);
-		}
-
-		return {
-			id: agentId,
-			model: definition.model,
-			mode: "subagent",
-			prompt: typeof definition.prompt === "string" ? definition.prompt : "",
-		};
-	}
-
-	const subagents = Object.entries(config.agent).filter(([, def]) => def && typeof def === "object" && def.mode === "subagent");
-	if (subagents.length === 0) {
 		return undefined;
 	}
 
-	const [id, definition] = subagents[0];
-	const typedDef = definition as { model?: unknown; mode?: unknown; prompt?: unknown };
-	if (typeof typedDef.model !== "string" || typedDef.model.length === 0) {
-		throw new Error(`Agent profile '${id}' is missing a valid model.`);
+	const definition = config.agent[agentId];
+	if (!definition) {
+		return undefined;
+	}
+
+	if (definition.mode !== "subagent") {
+		throw new Error(`Agent profile '${agentId}' is not a subagent (mode=${String(definition.mode)}).`);
+	}
+
+	if (typeof definition.model !== "string" || definition.model.length === 0) {
+		throw new Error(`Agent profile '${agentId}' is missing a valid model.`);
 	}
 
 	return {
-		id,
-		model: typedDef.model as string,
+		id: agentId,
+		model: definition.model,
 		mode: "subagent",
-		prompt: typeof typedDef.prompt === "string" ? typedDef.prompt : "",
+		prompt: typeof definition.prompt === "string" ? definition.prompt : "",
+		permission: definition.permission,
 	};
 }
 
@@ -171,10 +171,25 @@ export async function handleSubagentRunRequest(
 	rootDir: string,
 	helper: SubagentHelpers,
 ): Promise<void> {
+	const requestId = readRequestId(request.headers);
+	let operationStartedAt = 0;
+	const logRejected = (reason: string, agentId?: string): void => {
+		logBackendEvent({
+			event: "agent_operation",
+			operation: "subagent_run",
+			phase: "end",
+			status: "rejected",
+			reason,
+			...(requestId ? { requestId } : {}),
+			...(agentId ? { agentId } : {}),
+		});
+	};
+
 	let body: SubagentRunRequestBody;
 	try {
 		body = validateSubagentRunBody(await helper.readJsonBody(request));
 	} catch (error) {
+		logRejected(error instanceof Error ? error.message : "invalid_body");
 		helper.sendJson(response, 400, {
 			error: error instanceof Error ? error.message : "Invalid subagent run request body.",
 		});
@@ -183,19 +198,45 @@ export async function handleSubagentRunRequest(
 
 	const profile = await findOpencodeSubagentProfile(body.agentId, rootDir);
 	if (!profile) {
+		logRejected("unknown_profile", body.agentId);
 		helper.sendJson(response, 400, { error: `Unknown subagent profile: ${body.agentId}` });
 		return;
 	}
 
 	const resolvedModel = resolveBackendModel(profile.model);
 	if (!resolvedModel) {
+		logRejected("unknown_model", body.agentId);
 		helper.sendJson(response, 500, { error: `Unable to resolve model for subagent profile '${body.agentId}' (${profile.model}).` });
 		return;
 	}
 
+	const allowedTools = deriveAllowedToolsFromPermission(profile.permission);
+	operationStartedAt = Date.now();
+	logBackendEvent({
+		event: "agent_operation",
+		operation: "subagent_run",
+		phase: "start",
+		...(requestId ? { requestId } : {}),
+		agentId: profile.id,
+		modelId: resolvedModel.id,
+		provider: resolvedModel.provider,
+		thinkingLevel: body.thinkingLevel,
+		allowedToolsCount: allowedTools.length,
+	});
+
+	await updateState((current) => ({
+		...current,
+		selection: {
+			modelId: profile.model,
+			agentId: profile.id,
+			thinkingMode: typeof body.thinkingLevel === "string" ? body.thinkingLevel : current.selection.thinkingMode,
+		},
+	}));
+
 	const state = await helper.readState();
 	const apiKey = resolveSubagentApiKey(resolvedModel.provider, body, state);
 	if (!apiKey) {
+		logRejected("missing_api_key", body.agentId);
 		helper.sendJson(response, 400, {
 			error:
 				resolvedModel.provider === "mistral"
@@ -215,10 +256,11 @@ export async function handleSubagentRunRequest(
 	try {
 		const stream = streamSimple(
 			resolvedModel,
-			{ systemPrompt: profile.prompt, messages: [{ role: "user", content: body.task }] },
+			{ systemPrompt: profile.prompt, messages: [{ role: "user", content: body.task, timestamp: Date.now() }] },
 			{
 				apiKey,
 				reasoning: body.thinkingLevel,
+				...(allowedTools.length > 0 ? ({ tools: allowedTools } as unknown as Record<string, unknown>) : {}),
 			},
 		);
 
@@ -268,6 +310,20 @@ export async function handleSubagentRunRequest(
 		errorMessage,
 		flow,
 	};
+
+	logBackendEvent({
+		event: "agent_operation",
+		operation: "subagent_run",
+		phase: "end",
+		status,
+		durationMs: Math.max(0, Date.now() - operationStartedAt),
+		...(requestId ? { requestId } : {}),
+		agentId: profile.id,
+		modelId: resolvedModel.id,
+		provider: resolvedModel.provider,
+		flowEntries: flow.length,
+		...(errorMessage ? { errorMessage } : {}),
+	});
 
 	helper.setNoStore(response);
 	helper.sendJson(response, 200, payload);

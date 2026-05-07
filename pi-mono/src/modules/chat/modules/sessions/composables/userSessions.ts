@@ -1,4 +1,4 @@
-import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ChatMessage, ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
 
 type CreateStoredSessionInput = {
@@ -7,7 +7,7 @@ type CreateStoredSessionInput = {
 	modelId: string;
 	opencodeAgentId?: string;
 	thinkingLevel: ThinkingLevel;
-	messages: AgentMessage[];
+	messages: ChatMessage[];
 	createdAt: string;
 };
 

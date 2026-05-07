@@ -13,6 +13,38 @@ export function readBearerToken(header?: string): string {
 	return match?.[1]?.trim() || "";
 }
 
+export function readRequestId(headers: IncomingMessage["headers"]): string | undefined {
+	const firstNonEmpty = (value: string | string[] | undefined): string | undefined => {
+		if (typeof value === "string") {
+			const trimmed = value.trim();
+			return trimmed ? trimmed : undefined;
+		}
+
+		if (Array.isArray(value)) {
+			for (const item of value) {
+				const trimmed = item.trim();
+				if (trimmed) {
+					return trimmed;
+				}
+			}
+		}
+
+		return undefined;
+	};
+
+	return firstNonEmpty(headers["x-request-id"]) ?? firstNonEmpty(headers["x-correlation-id"]);
+}
+
+export function logBackendEvent(event: Record<string, unknown>): void {
+	console.log(
+		JSON.stringify({
+			ts: new Date().toISOString(),
+			scope: "backend",
+			...event,
+		}),
+	);
+}
+
 export function emptyUsage() {
 	return {
 		input: 0,

@@ -1,40 +1,24 @@
-import type { AgentMessage, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import {
-	AVAILABLE_PROVIDERS,
-	DEFAULT_MODEL_ID,
-	DEFAULT_PROVIDER,
-	THINKING_LEVELS,
-} from "~src/modules/chat/modules/modelsProviders/shared/constants/models";
-import type { OpenAICodexCredentials } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
-import { loginOpenAICodexByBrowser } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
-import { createAgentInstance } from "~src/modules/chat/modules/agents/services/agent";
-import { availableModels, resolveModel } from "~src/modules/chat/modules/modelsProviders/services/models";
-import type { PendingImage } from "~src/modules/chat/modules/chat/shared/types/chat";
+
+import type { PendingImage, ChatMessage, ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
 import { createSystemNotification } from "~src/modules/chat/modules/chat/shared/utils/custom-messages";
-import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
-import { createSubscribedAgent, disposeAgentSubscription } from "~src/modules/chat/modules/agents/composables/agents";
-import {
-	applySelectedModelToAgent,
-	providerFromModelId,
-} from "~src/modules/chat/modules/modelsProviders/composables/modelsProviders";
 import { createComposerActions } from "~src/modules/chat/modules/chat/composables/composerActions";
 import { createSessionActions } from "~src/modules/chat/modules/sessions/composables/sessionActions";
+import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
+import { shouldPersistSession } from "~src/modules/chat/modules/sessions/domain/helpers";
 import {
 	flushSessionsBestEffort,
 	loadServerState,
+	type OpenAICodexCredentialStatus,
 	persistMistralApiKey,
 	persistOpenAICodexCredentials,
+	persistSelection,
 } from "~src/modules/chat/modules/persistence/services/serverState";
+import { loadServerCatalog, type ServerAgentCatalogEntry } from "~src/modules/chat/modules/persistence/services/serverCatalog";
 import { createTitleEditor } from "~src/modules/chat/modules/titleGeneration/composables/titleEditor";
-import { shouldPersistSession } from "~src/modules/chat/modules/sessions/domain/helpers";
 import { generateTitle } from "~src/modules/chat/modules/titleGeneration/domain/title";
-import {
-	findOpencodeAgent,
-	getDefaultPrimaryAgentId,
-	getOpencodeAgents,
-	getOpencodeModels,
-} from "~src/modules/chat/modules/opencodeConfig/services/opencode";
+import { loginOpenAICodexByBrowser } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
+import { providerFromModelId } from "~src/modules/chat/modules/modelsProviders/composables/modelsProviders";
 
 export function useChatController() {
 	const currentSessionId = ref<string | undefined>();
@@ -48,74 +32,28 @@ export function useChatController() {
 	const sessions = ref<StoredSession[]>([]);
 	const composerText = ref("");
 	const mistralApiKey = ref("");
-	const openAICodexCredentials = ref<OpenAICodexCredentials | undefined>();
-	const selectedProvider = ref<(typeof AVAILABLE_PROVIDERS)[number]>(DEFAULT_PROVIDER);
-	const selectedModelId = ref(DEFAULT_MODEL_ID);
+	const openAICodexCredentials = ref<OpenAICodexCredentialStatus | undefined>();
+	const availableProviders = ref<string[]>([]);
+	const thinkingLevels = ref<ThinkingLevel[]>(["off", "minimal", "low", "medium", "high", "xhigh"]);
+	const opencodeAgents = ref<ServerAgentCatalogEntry[]>([]);
+	const opencodeModels = ref<string[]>([]);
+	const selectedProvider = ref("mistral");
+	const selectedModelId = ref("");
 	const selectedThinkingLevel = ref<ThinkingLevel>("off");
-	const opencodeAgents = getOpencodeAgents();
-	const opencodeModels = getOpencodeModels();
-	const selectedOpencodeAgentId = ref<string | undefined>(getDefaultPrimaryAgentId());
+	const selectedOpencodeAgentId = ref<string | undefined>("default");
 	const persistedSessions = ref<StoredSession[]>([]);
 
-	const messages = ref<AgentMessage[]>([]);
+	const messages = ref<ChatMessage[]>([]);
 	const isStreaming = ref(false);
 	const errorMessage = ref<string | undefined>();
 	const pendingImages = ref<PendingImage[]>([]);
 
 	let createdAtBySessionId = new Map<string, string>();
-	let agent = createAgentInstance({
-		selectedModelId: selectedModelId.value,
-		mistralApiKey: mistralApiKey.value,
-		openAICodexCredentials: openAICodexCredentials.value,
-		onOpenAICodexCredentialsChange: (credentials) => {
-			openAICodexCredentials.value = credentials;
-			void persistOpenAICodexCredentials(credentials);
-		},
-	});
-	let agentUnsubscribe: (() => void) | undefined;
 
 	const hasMessages = computed(() => messages.value.length > 0);
-	const models = computed(() => availableModels(selectedProvider.value));
+	const models = computed(() => opencodeModels.value.map((id) => ({ id })));
 	const hasOpenAICodexLogin = computed(() => Boolean(openAICodexCredentials.value));
-	const agentReady = computed(() => Boolean(agent));
-
-	function selectedOpencodeAgentProfile() {
-		return selectedOpencodeAgentId.value ? findOpencodeAgent(selectedOpencodeAgentId.value) : undefined;
-	}
-
-	function applySelectedOpencodeAgent(agentInstance: typeof agent) {
-		const profile = selectedOpencodeAgentProfile();
-		if (!profile) {
-			return;
-		}
-
-		agentInstance.state.systemPrompt = profile.prompt;
-	}
-
-	async function createAgent(initialState?: Partial<AgentState>) {
-		disposeAgentSubscription(agentUnsubscribe);
-		agentUnsubscribe = undefined;
-
-		const subscribedAgent = createSubscribedAgent({
-			initialState: {
-				...initialState,
-				systemPrompt: initialState?.systemPrompt ?? selectedOpencodeAgentProfile()?.prompt,
-			},
-			selectedModelId: selectedModelId.value,
-			mistralApiKey: mistralApiKey.value,
-			openAICodexCredentials: openAICodexCredentials.value,
-			onOpenAICodexCredentialsChange: (credentials) => {
-				openAICodexCredentials.value = credentials;
-				void persistOpenAICodexCredentials(credentials);
-			},
-			onStateChange: syncFromAgent,
-		});
-
-		agent = subscribedAgent.agent;
-		agentUnsubscribe = subscribedAgent.unsubscribe;
-
-		syncFromAgent();
-	}
+	const agentReady = computed(() => opencodeAgents.value.length > 0 && selectedModelId.value.trim().length > 0);
 
 	const {
 		initializeStoredSessions,
@@ -125,14 +63,13 @@ export function useChatController() {
 		startNewSession,
 		removeSession,
 	} = createSessionActions({
-		getAgent: () => agent,
-		createAgent,
 		currentSessionId,
 		currentTitle,
 		selectedProvider,
 		selectedModelId,
 		selectedOpencodeAgentId,
 		selectedThinkingLevel,
+		messages,
 		sessions,
 		showSessions,
 		loadPersistedSessions: () => persistedSessions.value,
@@ -141,11 +78,8 @@ export function useChatController() {
 		setCreatedAtBySessionId: (value) => {
 			createdAtBySessionId = value;
 		},
+		providerFromModelId,
 	});
-
-	function flushSessionsOnPageExit() {
-		flushPersistedSessions();
-	}
 
 	const { startEditingTitle, setEditableTitle, saveTitle, onTitleEditKeydown } = createTitleEditor({
 		currentTitle,
@@ -163,40 +97,37 @@ export function useChatController() {
 		onComposerPaste,
 		removePendingImage,
 	} = createComposerActions({
-		getAgent: () => agent,
+		messages,
 		isStreaming,
 		composerText,
 		errorMessage,
 		pendingImages,
+		selectedModelId,
+		selectedThinkingLevel,
+		selectedOpencodeAgentId,
+		onConversationSettled: () => {
+			syncDerivedState();
+			void persistCurrentSession();
+		},
 	});
 
-
-	function syncFromAgent() {
-		if (!agent) {
-			return;
-		}
-
-		messages.value = [...agent.state.messages];
-		isStreaming.value = Boolean(agent.state.isStreaming);
-		errorMessage.value = agent.state.errorMessage;
-		selectedThinkingLevel.value = agent.state.thinkingLevel;
-		selectedModelId.value = agent.state.model?.id || selectedModelId.value;
-		selectedProvider.value = providerFromModelId(selectedModelId.value);
-
+	function syncDerivedState() {
+		selectedProvider.value = providerFromModelId(selectedModelId.value || opencodeAgents.value[0]?.model || "mistral");
 		if (!currentTitle.value && shouldPersistSession(messages.value)) {
 			currentTitle.value = generateTitle(messages.value);
 		}
-
-		if (!agent.state.isStreaming) {
-			void persistCurrentSession();
-		}
 	}
 
+	function selectedOpencodeAgentProfile() {
+		return opencodeAgents.value.find((agent) => agent.id === selectedOpencodeAgentId.value);
+	}
 
 	function queueSystemNotification() {
-		agent?.steer(
+		messages.value = [
+			...messages.value,
 			createSystemNotification("This notice is UI-only. It gets transformed for the model but remains visible to users."),
-		);
+		];
+		void persistCurrentSession();
 	}
 
 	function setMistralApiKey(value: string) {
@@ -207,47 +138,21 @@ export function useChatController() {
 		selectedThinkingLevel.value = value;
 	}
 
-	function applySettings() {
-		void persistMistralApiKey(mistralApiKey.value);
-		void persistOpenAICodexCredentials(openAICodexCredentials.value);
-
-		if (!agent) {
-			showSettings.value = false;
-			return;
-		}
-
-		applySelectedModelToAgent(agent, selectedModelId.value);
-		applySelectedOpencodeAgent(agent);
-
-		agent.state.thinkingLevel = selectedThinkingLevel.value;
-		void persistCurrentSession();
-		showSettings.value = false;
-	}
-
 	function setSelectedModelId(modelId: string) {
 		selectedModelId.value = modelId;
+		selectedProvider.value = providerFromModelId(modelId);
 	}
 
 	function setSelectedProvider(provider: string) {
-		if (!AVAILABLE_PROVIDERS.includes(provider as (typeof AVAILABLE_PROVIDERS)[number])) {
-			return;
-		}
-		const nextProvider = provider as (typeof AVAILABLE_PROVIDERS)[number];
-
-		selectedProvider.value = nextProvider;
-		const providerModels = availableModels(nextProvider);
-		if (providerModels.length === 0) {
-			return;
-		}
-
-		const currentModelStillValid = providerModels.some((model) => model.id === selectedModelId.value);
-		if (!currentModelStillValid) {
-			selectedModelId.value = providerModels[0].id;
+		selectedProvider.value = provider;
+		const matchingModel = opencodeAgents.value.find((agent) => providerFromModelId(agent.model) === provider)?.model || opencodeModels.value[0];
+		if (matchingModel) {
+			selectedModelId.value = matchingModel;
 		}
 	}
 
 	function setSelectedOpencodeAgentId(agentId: string) {
-		const profile = findOpencodeAgent(agentId);
+		const profile = opencodeAgents.value.find((agent) => agent.id === agentId);
 		if (!profile) {
 			return;
 		}
@@ -257,10 +162,30 @@ export function useChatController() {
 		selectedProvider.value = providerFromModelId(profile.model);
 	}
 
+	function persistCurrentSelection() {
+		return persistSelection({
+			modelId: selectedModelId.value,
+			agentId: selectedOpencodeAgentId.value || "default",
+			thinkingMode: selectedThinkingLevel.value,
+		});
+	}
+
+	function applySettings() {
+		void persistMistralApiKey(mistralApiKey.value);
+		void persistCurrentSelection();
+		void persistCurrentSession();
+		showSettings.value = false;
+	}
+
+	function applyQuickModelSettings() {
+		void persistCurrentSelection();
+		void persistCurrentSession();
+	}
+
 	async function loginOpenAICodex() {
 		try {
 			const credentials = await loginOpenAICodexByBrowser();
-			openAICodexCredentials.value = credentials;
+			openAICodexCredentials.value = { accountId: credentials.accountId, expires: credentials.expires };
 			await persistOpenAICodexCredentials(credentials);
 			errorMessage.value = undefined;
 		} catch (error) {
@@ -271,21 +196,6 @@ export function useChatController() {
 	function logoutOpenAICodex() {
 		openAICodexCredentials.value = undefined;
 		void persistOpenAICodexCredentials(undefined);
-	}
-
-	function applyQuickModelSettings() {
-		if (!agent) {
-			return;
-		}
-
-		const modelId = applySelectedModelToAgent(agent, selectedModelId.value);
-		applySelectedOpencodeAgent(agent);
-		agent.state.thinkingLevel = selectedThinkingLevel.value;
-		if (modelId) {
-			selectedProvider.value = providerFromModelId(modelId);
-		}
-
-		void persistCurrentSession();
 	}
 
 	function toggleSessions() {
@@ -304,19 +214,32 @@ export function useChatController() {
 		showSettings.value = false;
 	}
 
+	function flushSessionsOnPageExit() {
+		flushPersistedSessions();
+	}
+
 	onMounted(async () => {
 		window.addEventListener("pagehide", flushSessionsOnPageExit);
 		window.addEventListener("beforeunload", flushSessionsOnPageExit);
 
 		try {
-			const persistedState = await loadServerState();
+			const [catalog, persistedState] = await Promise.all([loadServerCatalog(), loadServerState()]);
+			availableProviders.value = catalog.providers;
+			thinkingLevels.value = catalog.thinkingLevels;
+			opencodeAgents.value = catalog.agents;
+			opencodeModels.value = catalog.models;
 			mistralApiKey.value = persistedState.mistralApiKey || import.meta.env.VITE_MISTRAL_API_KEY || "";
 			openAICodexCredentials.value = persistedState.openAICodexCredentials;
 			persistedSessions.value = persistedState.sessions;
+
+			selectedOpencodeAgentId.value = persistedState.selection.agentId || catalog.defaultAgentId;
+			selectedModelId.value = persistedState.selection.modelId || selectedOpencodeAgentProfile()?.model || catalog.defaultModelId;
+			selectedThinkingLevel.value =
+				(typeof persistedState.selection.thinkingMode === "string" ? persistedState.selection.thinkingMode : "off") as ThinkingLevel;
+			syncDerivedState();
 		} catch (error) {
-			errorMessage.value = error instanceof Error ? error.message : "Failed to load server state.";
+			errorMessage.value = error instanceof Error ? error.message : "Failed to load backend state.";
 			mistralApiKey.value = import.meta.env.VITE_MISTRAL_API_KEY || "";
-			persistedSessions.value = [];
 		}
 
 		initializeStoredSessions();
@@ -325,29 +248,23 @@ export function useChatController() {
 		if (sessionIdToLoad) {
 			const loaded = await loadSession(sessionIdToLoad);
 			if (loaded) {
+				syncDerivedState();
 				return;
 			}
 		}
 
-		await createAgent({
-			messages: [],
-			thinkingLevel: "off",
-			model: resolveModel(selectedModelId.value),
-			tools: [],
-		});
+		messages.value = [];
+		syncDerivedState();
 	});
 
 	onBeforeUnmount(() => {
 		window.removeEventListener("pagehide", flushSessionsOnPageExit);
 		window.removeEventListener("beforeunload", flushSessionsOnPageExit);
-
-		disposeAgentSubscription(agentUnsubscribe);
-		agentUnsubscribe = undefined;
 	});
 
 	return {
-		AVAILABLE_PROVIDERS,
-		THINKING_LEVELS,
+		AVAILABLE_PROVIDERS: availableProviders,
+		THINKING_LEVELS: thinkingLevels,
 		opencodeAgents,
 		opencodeModels,
 		hasMessages,

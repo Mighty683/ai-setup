@@ -1,7 +1,5 @@
-import type { Agent, AgentState, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Ref } from "vue";
-import { resolveModel, type SupportedProvider } from "~src/modules/chat/modules/modelsProviders/services/models";
-import { providerFromModelId } from "~src/modules/chat/modules/modelsProviders/composables/modelsProviders";
+
 import { persistSessions as persistSessionsToServer } from "~src/modules/chat/modules/persistence/services/serverState";
 import { updateSessionParam } from "~src/modules/chat/modules/sessions/shared/storage/sessionParam";
 import {
@@ -18,22 +16,23 @@ import {
 } from "~src/modules/chat/modules/sessions/domain/helpers";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
 import { generateTitle } from "~src/modules/chat/modules/titleGeneration/domain/title";
+import type { ChatMessage, ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
 
 type CreateSessionActionsOptions = {
-	getAgent: () => Agent | undefined;
-	createAgent: (initialState?: Partial<AgentState>) => Promise<void>;
 	currentSessionId: Ref<string | undefined>;
 	currentTitle: Ref<string>;
-	selectedProvider: Ref<SupportedProvider>;
+	selectedProvider: Ref<string>;
 	selectedModelId: Ref<string>;
 	selectedOpencodeAgentId: Ref<string | undefined>;
 	selectedThinkingLevel: Ref<ThinkingLevel>;
+	messages: Ref<ChatMessage[]>;
 	sessions: Ref<StoredSession[]>;
 	showSessions: Ref<boolean>;
 	getCreatedAtBySessionId: () => Map<string, string>;
 	setCreatedAtBySessionId: (value: Map<string, string>) => void;
 	loadPersistedSessions: () => StoredSession[];
 	flushPersistedSessions: (sessions: StoredSession[]) => void;
+	providerFromModelId: (modelId: string) => string;
 };
 
 export function createSessionActions(options: CreateSessionActionsOptions) {
@@ -64,8 +63,7 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 	}
 
 	async function persistCurrentSession() {
-		const agent = options.getAgent();
-		if (!agent || !shouldPersistSession(agent.state.messages)) {
+		if (!shouldPersistSession(options.messages.value)) {
 			return;
 		}
 
@@ -82,11 +80,11 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 		const createdAt = getOrCreateSessionCreatedAt(options.getCreatedAtBySessionId(), id);
 		const storedSession = createStoredSession({
 			id,
-			title: options.currentTitle.value || generateTitle(agent.state.messages),
-			modelId: agent.state.model?.id || options.selectedModelId.value,
+			title: options.currentTitle.value || generateTitle(options.messages.value),
+			modelId: options.selectedModelId.value,
 			opencodeAgentId: options.selectedOpencodeAgentId.value,
-			thinkingLevel: agent.state.thinkingLevel,
-			messages: agent.state.messages,
+			thinkingLevel: options.selectedThinkingLevel.value,
+			messages: options.messages.value,
 			createdAt,
 		});
 
@@ -106,18 +104,12 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 		options.getCreatedAtBySessionId().set(session.id, session.createdAt);
 		options.currentSessionId.value = session.id;
 		options.currentTitle.value = session.title;
-		options.selectedProvider.value = providerFromModelId(session.modelId);
+		options.selectedProvider.value = options.providerFromModelId(session.modelId);
 		options.selectedModelId.value = session.modelId;
 		options.selectedOpencodeAgentId.value = session.opencodeAgentId;
 		options.selectedThinkingLevel.value = session.thinkingLevel;
+		options.messages.value = session.messages;
 		updateSessionParam(session.id);
-
-		await options.createAgent({
-			model: resolveModel(session.modelId),
-			thinkingLevel: session.thinkingLevel,
-			messages: session.messages,
-			tools: [],
-		});
 
 		options.showSessions.value = false;
 		return true;
@@ -126,13 +118,8 @@ export function createSessionActions(options: CreateSessionActionsOptions) {
 	async function startNewSession() {
 		options.currentSessionId.value = undefined;
 		options.currentTitle.value = "";
+		options.messages.value = [];
 		updateSessionParam(undefined);
-		await options.createAgent({
-			messages: [],
-			thinkingLevel: options.selectedThinkingLevel.value,
-			model: resolveModel(options.selectedModelId.value),
-			tools: [],
-		});
 	}
 
 	function removeSession(sessionId: string) {

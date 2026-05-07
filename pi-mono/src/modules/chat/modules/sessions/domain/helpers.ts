@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { ChatMessage } from "~src/modules/chat/modules/chat/shared/types/chat";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
 
 function sortByLastModifiedDesc(data: StoredSession[]): StoredSession[] {
@@ -18,7 +18,7 @@ export function upsertSession(existing: StoredSession[], nextSession: StoredSess
 	return sortByLastModifiedDesc([nextSession, ...rest]);
 }
 
-export function shouldPersistSession(agentMessages: AgentMessage[]): boolean {
+export function shouldPersistSession(agentMessages: ChatMessage[]): boolean {
 	const hasUserMessage = agentMessages.some((message) => message.role === "user");
 	const hasAssistantMessage = agentMessages.some((message) => message.role === "assistant");
 	return hasUserMessage && hasAssistantMessage;

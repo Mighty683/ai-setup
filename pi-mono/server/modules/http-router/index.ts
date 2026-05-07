@@ -1,9 +1,8 @@
-import { readJsonBody, sendJson, setNoStore } from "../common";
+import { handleAgentRunRequest, handleCatalogRequest } from "../ai-runtime";
+import { sendJson, setNoStore } from "../common";
 import { handleOAuthExchange, handleOAuthRefresh } from "../oauth";
-import { handleCredentialsUpdate, handleSessionsUpdate, handleSettingsUpdate, readState } from "../state";
+import { handleCredentialsUpdate, handleSelectionUpdate, handleSessionsUpdate, handleSettingsUpdate, readClientState } from "../state";
 import { serveStaticAsset } from "../static";
-import { handleStreamRequest } from "../stream";
-import { handleSubagentRunRequest } from "../subagent";
 import type { RouteContext } from "./types";
 
 export async function routeRequest({ request, response, url, rootDir }: RouteContext): Promise<void> {
@@ -14,7 +13,12 @@ export async function routeRequest({ request, response, url, rootDir }: RouteCon
 
 	if (request.method === "GET" && url.pathname === "/api/state") {
 		setNoStore(response);
-		sendJson(response, 200, await readState());
+		sendJson(response, 200, await readClientState());
+		return;
+	}
+
+	if (request.method === "GET" && url.pathname === "/api/catalog") {
+		await handleCatalogRequest(response, rootDir);
 		return;
 	}
 
@@ -33,18 +37,21 @@ export async function routeRequest({ request, response, url, rootDir }: RouteCon
 		return;
 	}
 
-	if (request.method === "POST" && url.pathname === "/api/stream") {
-		await handleStreamRequest(request, response);
+	if (request.method === "PUT" && url.pathname === "/api/state/selection") {
+		await handleSelectionUpdate(request, response);
 		return;
 	}
 
-	if (request.method === "POST" && url.pathname === "/api/subagent/run") {
-		await handleSubagentRunRequest(request, response, rootDir, { readJsonBody, readState, sendJson, setNoStore });
+	if (request.method === "POST" && url.pathname === "/api/agent/run") {
+		await handleAgentRunRequest(request, response, rootDir);
 		return;
 	}
 
-	if (request.method === "POST" && (url.pathname === "/api/ask-subagent" || url.pathname === "/ask-subagent")) {
-		await handleSubagentRunRequest(request, response, rootDir, { readJsonBody, readState, sendJson, setNoStore });
+	if (
+		request.method === "POST" &&
+		(url.pathname === "/api/stream" || url.pathname === "/api/subagent/run" || url.pathname === "/api/ask-subagent" || url.pathname === "/ask-subagent")
+	) {
+		sendJson(response, 410, { error: "Legacy AI runtime endpoint retired. Use /api/agent/run." });
 		return;
 	}
 

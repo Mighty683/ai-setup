@@ -1,6 +1,6 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { ChatMessage } from "~src/modules/chat/modules/chat/shared/types/chat";
 
-export function messageTimestamp(message: AgentMessage): string {
+export function messageTimestamp(message: ChatMessage): string {
 	if (!message || typeof message !== "object") {
 		return "";
 	}

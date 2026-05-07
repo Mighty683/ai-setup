@@ -1,20 +1,9 @@
-import type { Agent } from "@mariozechner/pi-agent-core";
-import {
-	inferProvider,
-	resolveModel,
-	type SupportedProvider,
-} from "~src/modules/chat/modules/modelsProviders/services/models";
-
-export function providerFromModelId(modelId: string): SupportedProvider {
-	return inferProvider(modelId);
-}
-
-export function applySelectedModelToAgent(agent: Agent, modelId: string): string | undefined {
-	const nextModel = resolveModel(modelId);
-	if (!nextModel) {
-		return undefined;
+export function providerFromModelId(modelId: string): string {
+	if (modelId.startsWith("openai/") || modelId.startsWith("openai-codex/")) {
+		return "openai-codex";
 	}
-
-	agent.state.model = nextModel;
-	return nextModel.id;
+	if (modelId.startsWith("mistral/") || modelId.startsWith("mistral.")) {
+		return "mistral";
+	}
+	return "mistral";
 }

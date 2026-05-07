@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:backend": "tsx --watch ./server/index.ts",
+    "dev:backend": "tsx watch ./server/index.ts",
     "build": "vite build",
     "tsc": "tsc",
     "preview": "vite preview",

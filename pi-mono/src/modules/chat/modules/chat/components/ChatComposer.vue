@@ -5,7 +5,7 @@ import UiCommandButton from "~src/core/ui/primitives/UiCommandButton.vue";
 import UiField from "~src/core/ui/primitives/UiField.vue";
 import UiTextControl from "~src/core/ui/primitives/UiTextControl.vue";
 import type { ModelOption } from "~src/modules/chat/modules/chat/types/ui";
-import type { OpencodeAgentProfile } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
+import type { ServerAgentCatalogEntry } from "~src/modules/chat/modules/persistence/services/serverCatalog";
 import PendingImageList from "./PendingImageList.vue";
 
 const props = defineProps<{
@@ -18,7 +18,7 @@ const props = defineProps<{
 	selectedThinkingLevel: string;
 	thinkingLevels: readonly string[];
 	selectedOpencodeAgentId?: string;
-	opencodeAgents: readonly OpencodeAgentProfile[];
+	opencodeAgents: readonly ServerAgentCatalogEntry[];
 	models: readonly ModelOption[];
 	isStreaming: boolean;
 }>();

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-import { ROOT_DIR, sendJson, setCorsHeaders } from "../common";
+import { ROOT_DIR, logBackendEvent, readRequestId, sendJson, setCorsHeaders } from "../common";
 import { routeRequest } from "../http-router";
 import type { ServerBootstrapOptions } from "./types";
 
@@ -9,9 +9,32 @@ const DEFAULT_HOST = process.env.HOST || "127.0.0.1";
 
 export function createBackendServer(options: ServerBootstrapOptions) {
 	return createServer(async (request, response) => {
+		const startTime = Date.now();
+		const requestId = readRequestId(request.headers);
+		const method = request.method;
+		const path = request.url ? new URL(request.url, "http://localhost").pathname : undefined;
+
+		response.on("finish", () => {
+			logBackendEvent({
+				event: "http_request",
+				method,
+				path,
+				statusCode: response.statusCode,
+				durationMs: Date.now() - startTime,
+				...(requestId ? { requestId } : {}),
+			});
+		});
+
 		setCorsHeaders(response);
 
 		if (!request.url || !request.headers.host) {
+			logBackendEvent({
+				event: "http_request_rejected",
+				reason: "invalid_request",
+				method,
+				path,
+				...(requestId ? { requestId } : {}),
+			});
 			sendJson(response, 400, { error: "Invalid request." });
 			return;
 		}

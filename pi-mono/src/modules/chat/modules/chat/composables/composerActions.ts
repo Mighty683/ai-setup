@@ -1,7 +1,9 @@
-import type { Agent } from "@mariozechner/pi-agent-core";
+import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import type { Ref } from "vue";
+
+import { streamAgentRun } from "~src/modules/chat/modules/agents/services/backendAgent";
 import { fileToPendingImage } from "~src/modules/chat/modules/chat/shared/helpers/images";
-import type { PendingImage } from "~src/modules/chat/modules/chat/shared/types/chat";
+import type { ChatMessage, PendingImage, ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
 import {
 	buildPromptPayload,
 	pickPastedImageFiles,
@@ -9,17 +11,22 @@ import {
 } from "~src/modules/chat/modules/chat/composables/chat";
 
 type CreateComposerActionsOptions = {
-	getAgent: () => Agent | undefined;
+	messages: Ref<ChatMessage[]>;
 	isStreaming: Ref<boolean>;
 	composerText: Ref<string>;
 	errorMessage: Ref<string | undefined>;
 	pendingImages: Ref<PendingImage[]>;
+	selectedModelId: Ref<string>;
+	selectedThinkingLevel: Ref<ThinkingLevel>;
+	selectedOpencodeAgentId: Ref<string | undefined>;
+	onConversationSettled?: () => void;
 };
 
 export function createComposerActions(options: CreateComposerActionsOptions) {
+	let activeAbortController: AbortController | undefined;
+
 	async function sendMessage() {
-		const agent = options.getAgent();
-		if (!agent || options.isStreaming.value) {
+		if (options.isStreaming.value) {
 			return;
 		}
 
@@ -28,21 +35,54 @@ export function createComposerActions(options: CreateComposerActionsOptions) {
 			return;
 		}
 
+		const userMessage: ChatMessage = {
+			role: "user",
+			content: buildUserContent(content, images),
+			timestamp: Date.now(),
+		};
+
+		const runMessages = [...options.messages.value, userMessage];
+		options.messages.value = runMessages;
 		options.composerText.value = "";
 		options.errorMessage.value = undefined;
 		options.isStreaming.value = true;
+		options.pendingImages.value = [];
+		activeAbortController = new AbortController();
+
 		try {
-			await agent.prompt(content, images);
-			options.pendingImages.value = [];
+			await streamAgentRun(
+				{
+					agentId: options.selectedOpencodeAgentId.value || "default",
+					modelId: options.selectedModelId.value,
+					thinkingLevel: options.selectedThinkingLevel.value,
+					messages: runMessages,
+				},
+				{
+					signal: activeAbortController.signal,
+					onEvent: (event) => {
+						if (event.type === "agent_event") {
+							applyAgentEvent(options.messages, event.event);
+							return;
+						}
+						if (event.type === "run_failed" || event.type === "run_aborted") {
+							options.errorMessage.value = event.error;
+						}
+					},
+				},
+			);
 		} catch (error) {
-			options.errorMessage.value = error instanceof Error ? error.message : "Message failed";
+			if (!activeAbortController.signal.aborted) {
+				options.errorMessage.value = error instanceof Error ? error.message : "Message failed";
+			}
 		} finally {
-			options.isStreaming.value = Boolean(agent.state.isStreaming);
+			options.isStreaming.value = false;
+			activeAbortController = undefined;
+			options.onConversationSettled?.();
 		}
 	}
 
 	function abortStream() {
-		options.getAgent()?.abort();
+		activeAbortController?.abort();
 		options.isStreaming.value = false;
 	}
 
@@ -111,4 +151,19 @@ export function createComposerActions(options: CreateComposerActionsOptions) {
 		onComposerPaste,
 		removePendingImage,
 	};
+}
+
+function buildUserContent(content: string, images: Array<Pick<PendingImage, "data" | "mimeType" | "type">>) {
+	const blocks = [] as Array<{ type: "text"; text: string } | Pick<PendingImage, "data" | "mimeType" | "type">>;
+	if (content.trim()) {
+		blocks.push({ type: "text", text: content.trim() });
+	}
+	blocks.push(...images);
+	return blocks.length === 1 && blocks[0]?.type === "text" ? blocks[0].text : blocks;
+}
+
+function applyAgentEvent(messages: Ref<ChatMessage[]>, event: AgentEvent) {
+	if (event.type === "message_end") {
+		messages.value = [...messages.value, event.message as ChatMessage];
+	}
 }

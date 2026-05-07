@@ -30,6 +30,7 @@ export type OpencodeAgentProfile = {
 	model: string;
 	mode: "primary" | "subagent";
 	prompt?: string;
+	permission?: unknown;
 };
 
 export type SubagentState = {

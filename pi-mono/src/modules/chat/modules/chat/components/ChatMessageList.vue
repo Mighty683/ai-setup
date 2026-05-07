@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { nextTick, ref, watch } from "vue";
+import type { ChatMessage } from "~src/modules/chat/modules/chat/shared/types/chat";
 import ChatMessageItem from "./ChatMessageItem.vue";
 
 const props = defineProps<{
 	hasMessages: boolean;
-	messages: AgentMessage[];
+	messages: ChatMessage[];
 	isStreaming: boolean;
 	errorMessage?: string;
 }>();

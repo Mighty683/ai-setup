@@ -1,18 +1,5 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Message } from "@mariozechner/pi-ai";
-
-export interface SystemNotificationMessage {
-	role: "system-notification";
-	message: string;
-	variant: "default" | "destructive";
-	timestamp: string;
-}
-
-declare module "@mariozechner/pi-agent-core" {
-	interface CustomAgentMessages {
-		"system-notification": SystemNotificationMessage;
-	}
-}
+import type { ChatMessage, SystemNotificationMessage } from "~src/modules/chat/modules/chat/shared/types/chat";
 
 export function createSystemNotification(
 	message: string,
@@ -26,7 +13,7 @@ export function createSystemNotification(
 	};
 }
 
-export function customConvertToLlm(messages: AgentMessage[]): Message[] {
+export function customConvertToLlm(messages: ChatMessage[]): Message[] {
 	const processed = messages.map((m): Message => {
 		if (m.role === "system-notification") {
 			const notification = m as SystemNotificationMessage;
@@ -64,7 +51,7 @@ export function customConvertToLlm(messages: AgentMessage[]): Message[] {
 	});
 }
 
-export function extractPlainText(content: AgentMessage extends { content: infer T } ? T : unknown): string {
+	export function extractPlainText(content: ChatMessage extends { content: infer T } ? T : unknown): string {
 	if (typeof content === "string") {
 		return content;
 	}
@@ -93,6 +80,6 @@ export function extractPlainText(content: AgentMessage extends { content: infer 
 		.trim();
 }
 
-export function isSystemNotification(message: AgentMessage): message is SystemNotificationMessage {
+export function isSystemNotification(message: ChatMessage): message is SystemNotificationMessage {
 	return message.role === "system-notification";
 }

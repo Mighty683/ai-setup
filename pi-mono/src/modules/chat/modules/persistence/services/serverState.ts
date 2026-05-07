@@ -1,10 +1,23 @@
 import type { OpenAICodexCredentials } from "~src/modules/chat/modules/agents/services/openaiCodexOAuth";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
+import type { ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
+
+export type OpenAICodexCredentialStatus = {
+	expires: number;
+	accountId: string;
+};
+
+export type PersistedSelectionState = {
+	modelId: string;
+	agentId: string;
+	thinkingMode: ThinkingLevel | string;
+};
 
 export type PersistedServerState = {
 	mistralApiKey: string;
-	openAICodexCredentials?: OpenAICodexCredentials;
+	openAICodexCredentials?: OpenAICodexCredentialStatus;
 	sessions: StoredSession[];
+	selection: PersistedSelectionState;
 };
 
 export async function loadServerState(): Promise<PersistedServerState> {
@@ -20,6 +33,7 @@ export async function loadServerState(): Promise<PersistedServerState> {
 			? json.openAICodexCredentials
 			: undefined,
 		sessions: Array.isArray(json.sessions) ? json.sessions : [],
+		selection: normalizeSelection(json.selection),
 	};
 }
 
@@ -35,6 +49,10 @@ export async function persistOpenAICodexCredentials(credentials?: OpenAICodexCre
 
 export async function persistSessions(sessions: StoredSession[]): Promise<void> {
 	await putJson("/api/state/sessions", { sessions });
+}
+
+export async function persistSelection(selection: PersistedSelectionState): Promise<void> {
+	await putJson("/api/state/selection", { selection });
 }
 
 export function flushSessionsBestEffort(sessions: StoredSession[]): void {
@@ -80,11 +98,22 @@ function isOpenAICodexCredentials(value: unknown): value is OpenAICodexCredentia
 		return false;
 	}
 
-	const parsed = value as Partial<OpenAICodexCredentials>;
+	const parsed = value as Partial<OpenAICodexCredentialStatus>;
 	return (
-		typeof parsed.access === "string" &&
-		typeof parsed.refresh === "string" &&
 		typeof parsed.accountId === "string" &&
 		typeof parsed.expires === "number"
 	);
+}
+
+function normalizeSelection(value: unknown): PersistedSelectionState {
+	if (!value || typeof value !== "object") {
+		return { modelId: "", agentId: "default", thinkingMode: "off" };
+	}
+
+	const next = value as Partial<PersistedSelectionState>;
+	return {
+		modelId: typeof next.modelId === "string" ? next.modelId : "",
+		agentId: typeof next.agentId === "string" && next.agentId.trim().length > 0 ? next.agentId : "default",
+		thinkingMode: typeof next.thinkingMode === "string" ? next.thinkingMode : "off",
+	};
 }

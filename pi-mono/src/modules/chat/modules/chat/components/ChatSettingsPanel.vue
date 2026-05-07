@@ -3,7 +3,7 @@ import UiCommandButton from "~src/core/ui/primitives/UiCommandButton.vue";
 import UiField from "~src/core/ui/primitives/UiField.vue";
 import UiPopoverPanel from "~src/core/ui/primitives/UiPopoverPanel.vue";
 import UiTextControl from "~src/core/ui/primitives/UiTextControl.vue";
-import type { OpencodeAgentProfile } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
+import type { ServerAgentCatalogEntry } from "~src/modules/chat/modules/persistence/services/serverCatalog";
 
 const props = withDefaults(
 	defineProps<{
@@ -13,7 +13,7 @@ const props = withDefaults(
 		selectedProvider: string;
 		selectedThinkingLevel: string;
 		thinkingLevels: readonly string[];
-		opencodeAgents: readonly OpencodeAgentProfile[];
+		opencodeAgents: readonly ServerAgentCatalogEntry[];
 		opencodeModels: readonly string[];
 		selectedOpencodeAgentId?: string;
 		apiKeyInputId?: string;

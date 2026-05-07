@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
 
 defineProps<{
 	selectedProvider: string;

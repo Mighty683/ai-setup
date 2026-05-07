@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import ChatComposer from "./ChatComposer.vue";
 import ChatIntroBar from "./ChatIntroBar.vue";
 import ChatMessageList from "./ChatMessageList.vue";
@@ -7,14 +6,14 @@ import ChatSessionsPanel from "./ChatSessionsPanel.vue";
 import ChatSettingsPanel from "./ChatSettingsPanel.vue";
 import ChatToolbar from "./ChatToolbar.vue";
 import type { ModelOption } from "~src/modules/chat/modules/chat/types/ui";
-import type { PendingImage } from "~src/modules/chat/modules/chat/shared/types/chat";
+import type { ChatMessage, PendingImage, ThinkingLevel } from "~src/modules/chat/modules/chat/shared/types/chat";
 import type { StoredSession } from "~src/modules/chat/modules/sessions/domain/types";
-import type { OpencodeAgentProfile } from "~src/modules/chat/modules/opencodeConfig/services/opencode";
+import type { ServerAgentCatalogEntry } from "~src/modules/chat/modules/persistence/services/serverCatalog";
 
 const props = defineProps<{
 	availableProviders: readonly string[];
 	thinkingLevels: ThinkingLevel[];
-	opencodeAgents: OpencodeAgentProfile[];
+	opencodeAgents: ServerAgentCatalogEntry[];
 	opencodeModels: string[];
 	hasMessages: boolean;
 	models: ModelOption[];
@@ -32,7 +31,7 @@ const props = defineProps<{
 	selectedModelId: string;
 	selectedThinkingLevel: ThinkingLevel;
 	selectedOpencodeAgentId?: string;
-	messages: AgentMessage[];
+	messages: ChatMessage[];
 	isStreaming: boolean;
 	errorMessage?: string;
 	pendingImages: PendingImage[];
