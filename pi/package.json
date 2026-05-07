@@ -1,0 +1,29 @@
+{
+  "name": "pi",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.74.0",
+    "pi-subagents": "0.24.0",
+    "pi-web-access": "0.10.7",
+    "pi-intercom" :"0.6.0",
+    "context-mode": "1.0.111",
+    "pi-mcp-adapter": "2.5.4",
+    "pi-lens": "3.8.41"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.0.6",
+      "onFail": "download"
+    }
+  },
+  "type": "module"
+}
