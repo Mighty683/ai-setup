@@ -132,6 +132,8 @@ function handleThinkingLevelChange(value: string) {
 				:available-providers="availableProviders"
 				:selected-provider="selectedProvider"
 				:selected-model-id="selectedModelId"
+				:selected-thinking-level="selectedThinkingLevel"
+				:thinking-levels="thinkingLevels"
 				:selected-opencode-agent-id="selectedOpencodeAgentId"
 				:opencode-agents="opencodeAgents"
 				:models="models"
@@ -142,6 +144,7 @@ function handleThinkingLevelChange(value: string) {
 				@image-select="onImageSelect"
 				@provider-change="onProviderChange"
 				@model-change="onModelChange"
+				@thinking-level-change="handleThinkingLevelChange"
 				@opencode-agent-change="onOpencodeAgentChange"
 				@apply-quick-model-settings="onApplyQuickModelSettings"
 				@send="onSendMessage"
@@ -172,8 +175,8 @@ function handleThinkingLevelChange(value: string) {
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
-	padding: 1rem 1.25rem 1.25rem;
-	gap: 1rem;
+	padding: 0.75rem 1rem 0.875rem;
+	gap: 0.75rem;
 }
 </style>
 

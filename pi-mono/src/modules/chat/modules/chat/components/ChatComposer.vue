@@ -15,6 +15,8 @@ const props = defineProps<{
 	availableProviders: readonly string[];
 	selectedProvider: string;
 	selectedModelId: string;
+	selectedThinkingLevel: string;
+	thinkingLevels: readonly string[];
 	selectedOpencodeAgentId?: string;
 	opencodeAgents: readonly OpencodeAgentProfile[];
 	models: readonly ModelOption[];
@@ -28,6 +30,7 @@ const emit = defineEmits<{
 	"image-select": [event: Event];
 	"provider-change": [provider: string];
 	"model-change": [modelId: string];
+	"thinking-level-change": [thinkingLevel: string];
 	"opencode-agent-change": [agentId: string];
 	"apply-quick-model-settings": [];
 	send: [];
@@ -80,6 +83,11 @@ function handleProviderChange(event: Event) {
 
 function handleOpencodeAgentChange(event: Event) {
 	emit("opencode-agent-change", (event.target as HTMLSelectElement).value);
+	emit("apply-quick-model-settings");
+}
+
+function handleThinkingLevelChange(event: Event) {
+	emit("thinking-level-change", (event.target as HTMLSelectElement).value);
 	emit("apply-quick-model-settings");
 }
 
@@ -138,6 +146,16 @@ function handleRemovePendingImage(imageId: string) {
 						<option v-for="agent in opencodeAgents" :key="agent.id" :value="agent.id">
 							{{ agent.id }}
 						</option>
+					</UiTextControl>
+				</UiField>
+				<UiField class="compact-field" label="Thinking" for-id="thinking-level-id">
+					<UiTextControl
+						as="select"
+						id="thinking-level-id"
+						:value="selectedThinkingLevel"
+						@change="handleThinkingLevelChange"
+					>
+						<option v-for="level in thinkingLevels" :key="level" :value="level">{{ level }}</option>
 					</UiTextControl>
 				</UiField>
 			</div>

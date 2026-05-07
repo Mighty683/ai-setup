@@ -77,7 +77,7 @@ export function createAgentInstance(options: AgentFactoryOptions): Agent {
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
-					agentId: params.agentId,
+					agentId: profile.id,
 					task: params.task,
 					mistralApiKey,
 					openAIAccessToken,

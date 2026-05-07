@@ -280,6 +280,7 @@ export function useChatController() {
 
 		const modelId = applySelectedModelToAgent(agent, selectedModelId.value);
 		applySelectedOpencodeAgent(agent);
+		agent.state.thinkingLevel = selectedThinkingLevel.value;
 		if (modelId) {
 			selectedProvider.value = providerFromModelId(modelId);
 		}

@@ -46,8 +46,8 @@ watch(
 	overflow: auto;
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
-	padding: 0.5rem 0.2rem;
+	gap: 0.625rem;
+	padding: 0.25rem 0.15rem;
 }
 
 .status {

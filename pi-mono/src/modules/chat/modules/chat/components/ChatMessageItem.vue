@@ -2,7 +2,6 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { computed, ref } from "vue";
 import { imageSrc, isImageContent } from "~src/modules/chat/modules/chat/shared/helpers/images";
-import { messageTimestamp } from "~src/modules/chat/modules/chat/shared/helpers/messages";
 import {
 	extractPlainText,
 	isSystemNotification,
@@ -21,7 +20,6 @@ const rowClasses = computed(() => [
 	props.message.role,
 	isSystemNotification(props.message) ? props.message.variant : "",
 ]);
-const timestamp = computed(() => messageTimestamp(props.message));
 
 type SubagentFlowEntry = {
 	role: string;
@@ -32,10 +30,20 @@ type SubagentFlowEntry = {
 type SubagentRunDisplay = {
 	toolCallId: string;
 	agentId: string;
+	agentLabel: string;
 	task: string;
+	taskPreview: string;
 	summary: string;
 	flow: SubagentFlowEntry[];
 	isError: boolean;
+};
+
+type SubagentCallDisplay = {
+	id: string;
+	agentId: string;
+	agentLabel: string;
+	taskPreview: string;
+	rawArguments: Record<string, unknown>;
 };
 
 type ToolResultMessage = Extract<AgentMessage, { role: "toolResult" }>;
@@ -46,10 +54,24 @@ const assistantSubagentCalls = computed(() => {
 		return [];
 	}
 
-	return (props.message as AssistantMessage).content.filter(
-		(block): block is { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> } =>
-			block.type === "toolCall" && block.name === "run_subagent",
-	);
+	return (props.message as AssistantMessage).content
+		.filter(
+			(block): block is { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> } =>
+				block.type === "toolCall" && block.name === "run_subagent",
+		)
+		.map((toolCall): SubagentCallDisplay => {
+			const args = asRecord(toolCall.arguments) ?? {};
+			const agentId =
+				pickString(args, ["agentLabel", "agentName", "agent", "agentId", "agent_id"]) || "subagent";
+
+			return {
+				id: toolCall.id,
+				agentId,
+				agentLabel: humanizeAgentLabel(agentId),
+				taskPreview: buildTaskPreview(args),
+				rawArguments: args,
+			};
+		});
 });
 
 const subagentToolResult = computed(() => {
@@ -81,6 +103,50 @@ function asFlowEntry(value: unknown): SubagentFlowEntry | null {
 	};
 }
 
+function pickString(record: Record<string, unknown> | undefined, keys: string[]): string {
+	if (!record) {
+		return "";
+	}
+
+	for (const key of keys) {
+		if (typeof record[key] === "string" && record[key].trim().length > 0) {
+			return record[key].trim() as string;
+		}
+	}
+
+	return "";
+}
+
+function truncateText(value: string, max = 120): string {
+	if (value.length <= max) {
+		return value;
+	}
+
+	return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
+function humanizeAgentLabel(value: string): string {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return "Subagent";
+	}
+
+	return trimmed
+		.replace(/[_-]+/g, " ")
+		.replace(/\s+/g, " ")
+		.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildTaskPreview(args: Record<string, unknown> | undefined): string {
+	const fullText = pickString(args, ["task", "instruction", "instructions", "prompt", "goal", "query"]);
+
+	if (!fullText) {
+		return "No task details provided.";
+	}
+
+	return truncateText(fullText, 110);
+}
+
 function extractSubagentRun(message: ToolResultMessage): SubagentRunDisplay | null {
 	if (message.toolName !== "run_subagent") {
 		return null;
@@ -99,13 +165,26 @@ function extractSubagentRun(message: ToolResultMessage): SubagentRunDisplay | nu
 
 	return {
 		toolCallId: message.toolCallId,
-		agentId: typeof details?.agentId === "string" ? details.agentId : typeof args?.agent_id === "string" ? args.agent_id : "unknown",
+		agentId:
+			typeof details?.agentId === "string"
+				? details.agentId
+				: typeof args?.agentId === "string"
+					? args.agentId
+					: typeof args?.agent_id === "string"
+						? args.agent_id
+						: "unknown",
+		agentLabel: humanizeAgentLabel(
+			pickString(details, ["agentLabel", "agentName", "agent", "agentId"]) ||
+				pickString(args, ["agentLabel", "agentName", "agent", "agentId", "agent_id"]) ||
+				"subagent",
+		),
 		task:
 			typeof details?.task === "string"
 				? details.task
 				: typeof args?.task === "string"
 					? args.task
 					: "",
+		taskPreview: buildTaskPreview(details || args),
 		summary: summaryFromDetails || summaryFromContent || "(empty response)",
 		flow,
 		isError: message.isError,
@@ -153,9 +232,13 @@ function closeSubagentModal() {
 				</template>
 				<template v-for="(toolCall, toolCallIndex) in assistantSubagentCalls" :key="`${messageKey}-subagent-call-${toolCall.id}`">
 					<div class="tool-block subagent-tool-call">
-						<div>subagent run {{ toolCallIndex + 1 }}</div>
-						<div class="status">toolCallId: {{ toolCall.id }}</div>
-						<pre>{{ JSON.stringify(toolCall.arguments, null, 2) }}</pre>
+						<div>Subagent run {{ toolCallIndex + 1 }} · {{ toolCall.agentLabel }}</div>
+						<div class="status">Task: {{ toolCall.taskPreview }}</div>
+						<details>
+							<summary>Technical details</summary>
+							<div class="status">toolCallId: {{ toolCall.id }}</div>
+							<pre>{{ JSON.stringify(toolCall.rawArguments, null, 2) }}</pre>
+						</details>
 					</div>
 				</template>
 			</template>
@@ -163,8 +246,9 @@ function closeSubagentModal() {
 			<template v-else-if="message.role === 'toolResult'">
 				<template v-if="subagentToolResult">
 					<button type="button" class="subagent-trigger" @click="openSubagentModal(subagentToolResult)">
-						Subagent {{ subagentToolResult.agentId }} {{ message.isError ? 'failed' : 'finished' }}. Click to inspect flow.
+						{{ subagentToolResult.agentLabel }} {{ message.isError ? 'encountered an issue' : 'completed' }}. Click to inspect flow.
 					</button>
+					<div class="status">Task: {{ subagentToolResult.taskPreview }}</div>
 					<div>{{ subagentToolResult.summary }}</div>
 				</template>
 				<div v-else class="tool-block">
@@ -197,7 +281,6 @@ function closeSubagentModal() {
 				</section>
 			</div>
 
-			<div v-if="timestamp" class="status timestamp">{{ timestamp }}</div>
 		</div>
 	</article>
 </template>
@@ -206,9 +289,9 @@ function closeSubagentModal() {
 .message-row {
 	display: grid;
 	grid-template-columns: 7rem minmax(0, 1fr);
-	gap: 1rem;
+	gap: 0.75rem;
 	align-items: start;
-	padding: 0.9rem 1rem;
+	padding: 0.65rem 0.8rem;
 	border-left: 2px solid rgba(100, 255, 140, 0.18);
 	background: rgba(7, 17, 10, 0.45);
 }
@@ -234,19 +317,19 @@ function closeSubagentModal() {
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
 	font-size: 0.8rem;
-	padding-top: 0.15rem;
+	padding-top: 0.1rem;
 }
 
 .message-body {
 	display: grid;
-	gap: 0.7rem;
+	gap: 0.5rem;
 	white-space: pre-wrap;
 	word-break: break-word;
 }
 
 .tool-block,
 details {
-	padding: 0.7rem 0.85rem;
+	padding: 0.55rem 0.7rem;
 	border: 1px solid rgba(100, 255, 140, 0.14);
 	background: rgba(9, 22, 12, 0.7);
 }
@@ -269,18 +352,14 @@ pre {
 
 .status {
 	color: rgba(156, 255, 178, 0.68);
-	font-size: 0.84rem;
-}
-
-.timestamp {
-	margin-top: -0.15rem;
+	font-size: 0.8rem;
 }
 
 .subagent-trigger {
 	border: 1px solid rgba(100, 255, 140, 0.45);
 	background: rgba(9, 22, 12, 0.85);
 	color: #9cffb2;
-	padding: 0.45rem 0.6rem;
+	padding: 0.35rem 0.5rem;
 	text-align: left;
 	cursor: pointer;
 }
@@ -353,7 +432,7 @@ pre {
 	.message-row {
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: 0.4rem;
 	}
 }
 </style>
