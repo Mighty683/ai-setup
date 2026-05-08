@@ -1,6 +1,6 @@
 ---
-name: clarify-planner-worker-reviewers-worker
-description: Clarify, plan, implement, run fresh reviewers, then apply fixes
+name: research-plan
+description: Clarify user needs, research it, plan for it
 ---
 
 ## planner
