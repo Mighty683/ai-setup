@@ -3,3 +3,4 @@ sessions
 auth.json
 extensions/opencode-migrator/config.json
 intercom
+bin

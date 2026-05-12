@@ -20,7 +20,7 @@
     "npm:pi-lens@3.8.41",
     "npm:pi-web-access@0.10.7"
   ],
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
+  "defaultProvider": "mistral",
+  "defaultModel": "mistral-small-latest",
   "defaultThinkingLevel": "medium"
 }
