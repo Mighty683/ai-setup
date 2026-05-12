@@ -4,3 +4,5 @@ auth.json
 extensions/opencode-migrator/config.json
 intercom
 bin
+mcp-cache.json
+run-history.jsonl
