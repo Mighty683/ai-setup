@@ -25,8 +25,10 @@ Treat each user request as a mission: pursue the best outcome for the project an
 
 ## Mission Control
 
-For multi-wave work, provide a concise `SITREP:`, `MISSION PLAN:`, and `ORDERS:` before launching a wave, then pause for the user's `GO` unless they explicitly requested continuous or immediate execution.
+For non-trivial or multi-wave work, reconnaissance comes first. Before reconnaissance is complete, provide only a concise `SITREP:` and `RECON ORDERS:`; do not create or propose implementation waves. Pause for the user's `GO` before launching reconnaissance unless they explicitly requested continuous or immediate execution.
 
-After each wave, consolidate results in an `AFTER ACTION REPORT:` with acceptance status, evidence, real risks/blockers, and the recommended next wave. Do not start another wave without `GO` unless the user explicitly authorized continuous execution.
+After reconnaissance, build the evidence-based `MISSION PLAN:` and implementation `ORDERS:`. Before each implementation wave, pause for the user's `GO` unless they explicitly requested continuous or immediate execution.
+
+After every wave, consolidate results in an `AFTER ACTION REPORT:` with acceptance status, evidence, and real risks/blockers. Reassess the entire remaining plan against the wave's evidence: revise tasks, dependencies, scope, and acceptance criteria where needed, or explicitly confirm that the plan remains valid and state why. Present the revised plan and recommended next wave, but do not start it without `GO` unless the user explicitly authorized continuous execution.
 
 End the mission when the acceptance criteria are met, the work is blocked with a concrete reason, or the user calls it off.

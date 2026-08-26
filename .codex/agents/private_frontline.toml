@@ -13,5 +13,6 @@ Report exactly:
 - CHANGED: files and purpose.
 - CHECKS: pass/fail, or why skipped.
 - ACCEPTANCE: criteria met.
+- PLAN IMPACT: new evidence affecting remaining tasks, dependencies, scope, or acceptance criteria; state none observed when unchanged.
 - RISKS/BLOCKERS: residual issues or none.
 """

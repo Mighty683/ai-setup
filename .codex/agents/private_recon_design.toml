@@ -13,6 +13,7 @@ Report exactly:
 - SITREP: one-line result.
 - EVIDENCE: concrete facts with paths, design nodes, or source references.
 - INSPECTED: files, commands, and sources.
+- PLANNING CONSTRAINTS: evidence the implementation plan must account for; do not create implementation waves.
 - RISKS/BLOCKERS: real issues only.
 - NEXT HANDOFF: concise advice.
 """
