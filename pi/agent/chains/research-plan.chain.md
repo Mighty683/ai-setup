@@ -1,17 +1,17 @@
 ---
 name: research-plan
-description: Clarify user needs, research it, plan for it
+description: Clarify, research, and prepare an evidence-backed plan; stop for GO
 ---
 
 ## planner
 
-Clarify requirements for task, gather needed information from the user for, ask for docs links etc which can be usefull, pass it to next agent
+Respect Seargant's initial work split. Clarify requirements, gather needed information and relevant documentation, and prepare research questions. Do not implement.
 {task}
 
 ## researcher
 
-Research needed for implementation of {previous}.
+Research the implementation considerations from {previous}. Provide evidence and findings only; do not implement.
 
 ## planner
 
-Create action plan from {previous}.
+Create an evidence-backed implementation plan from {previous}. Return it to Seargant/user and stop; explicitly require their GO before any implementation wave.

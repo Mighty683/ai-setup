@@ -9,6 +9,16 @@ type OpenCodeAgent = {
   permission?: Record<string, unknown>;
 };
 
+type PiAgent = {
+  name: string;
+  description: string;
+  model?: string;
+  prompt: string;
+  tools?: string[];
+  extensions?: string[];
+  maxSubagentDepth: number;
+};
+
 const MANAGED_HEADER = "<!-- managed-by: opencode-migrator -->";
 const OUTPUT_DIR = "agents";
 const NAME_PREFIX = "opencode-";
@@ -53,7 +63,7 @@ async function main() {
 
     const abs = path.join(outputDir, file);
     const content = await fs.readFile(abs, "utf8");
-    if (!content.startsWith("---\n") || !content.includes(MANAGED_HEADER)) continue;
+    if (!content.startsWith("---\n") || (!content.includes(MANAGED_HEADER) && !content.includes("Imported from OpenCode"))) continue;
 
     await fs.unlink(abs);
     console.log(`deleted ${path.relative(cwd, abs)}`);
@@ -62,17 +72,27 @@ async function main() {
 
 function normalizeAgent(name: string, agent: OpenCodeAgent) {
   const descriptionParts = [agent.role, agent.mode].filter(Boolean);
+  const delegationAllowed = allowsTaskDelegation(agent.permission);
   return {
     name,
     description: descriptionParts.length ? `Imported from OpenCode (${descriptionParts.join(", ")})` : "Imported from OpenCode",
     model: agent.model?.trim() || undefined,
     prompt: agent.prompt?.trim() || "You are an imported OpenCode agent.",
     tools: deriveTools(agent.permission),
+    // pi-subagents is an extension tool, not a builtin tool. Disabling normal
+    // extensions is the only available mechanical way to omit it for a child.
+    extensions: delegationAllowed ? undefined : [],
+    // Allows Pi -> Seargant -> Frontline -> Luna, but no deeper recursion.
+    maxSubagentDepth: delegationAllowed ? 3 : 0,
   };
 }
 
 function deriveTools(permission: Record<string, unknown> | undefined): string[] | undefined {
-  if (!permission || typeof permission !== "object") return undefined;
+  const readOnlyTools = ["bash", "read", "find", "grep", "ls"];
+  const standardTools = [...readOnlyTools, "write", "edit"];
+  if (!permission || typeof permission !== "object") return standardTools;
+
+  if (permission.edit === "deny") return readOnlyTools;
 
   const allowMap: Record<string, string> = {
     bash: "bash",
@@ -89,7 +109,15 @@ function deriveTools(permission: Record<string, unknown> | undefined): string[] 
     if ((permission as Record<string, unknown>)[key] === "allow") tools.add(value);
   }
 
-  return tools.size ? [...tools] : undefined;
+  return tools.size ? [...tools] : standardTools;
+}
+
+function allowsTaskDelegation(permission: Record<string, unknown> | undefined): boolean {
+  const task = permission?.task;
+  if (task === "allow") return true;
+  if (!task || typeof task !== "object") return false;
+
+  return Object.values(task as Record<string, unknown>).some((value) => value === "allow");
 }
 
 function chooseFileName(name: string, used: Set<string>): string {
@@ -106,7 +134,7 @@ function chooseFileName(name: string, used: Set<string>): string {
   return candidate;
 }
 
-function renderAgentMarkdown(agent: { name: string; description: string; model?: string; prompt: string; tools?: string[] }): string {
+function renderAgentMarkdown(agent: PiAgent): string {
   const lines: string[] = [
     "---",
     `name: ${yamlString(agent.name)}`,
@@ -115,6 +143,8 @@ function renderAgentMarkdown(agent: { name: string; description: string; model?:
 
   if (agent.model) lines.push(`model: ${yamlString(agent.model)}`);
   if (agent.tools?.length) lines.push(`tools: [${agent.tools.map(yamlString).join(", ")}]`);
+  if (agent.extensions !== undefined) lines.push("extensions:");
+  lines.push(`maxSubagentDepth: ${agent.maxSubagentDepth}`);
 
   lines.push("---", "", MANAGED_HEADER, "", agent.prompt.trim(), "");
   return `${lines.join("\n")}`;
