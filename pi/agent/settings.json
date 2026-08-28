@@ -17,7 +17,6 @@
   "packages": [
     "npm:pi-subagents@0.24.0",
     "npm:pi-intercom@0.6.0",
-    "npm:context-mode@1.0.111",
     "npm:pi-mcp-adapter@2.5.4",
     "npm:pi-lens@3.8.41",
     "npm:pi-web-access@0.10.7"
