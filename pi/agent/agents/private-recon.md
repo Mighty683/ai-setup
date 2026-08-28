@@ -1,8 +1,6 @@
 ---
 name: "private-recon"
 description: "Read-only technical reconnaissance"
-tools: ["bash", "read", "find", "grep", "ls"]
-extensions:
 maxSubagentDepth: 3
 ---
 
