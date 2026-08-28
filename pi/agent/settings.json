@@ -1,6 +1,10 @@
 {
   "subagents": {
-    "agentOverrides": {}
+    "agentOverrides": {
+      "seargant": {
+        "defaultContext": "fork"
+      }
+    }
   },
   "lastChangelogVersion": "0.84.3",
   "enabledModels": [
