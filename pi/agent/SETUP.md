@@ -24,25 +24,7 @@ export MISTRAL_API_KEY="..."
 
 Or copy `auth.template.json` to `auth.json` inside this folder and fill in your key locally.
 
-## 3. Migrate OpenCode agents
-
-Run the one-time TypeScript script with `tsx`:
-
-```bash
-pnpm opencode:migrate ../opencode.json
-```
-
-Or any source file path:
-
-```bash
-pnpm opencode:migrate /absolute/path/to/opencode.json
-```
-
-Generated managed agents are written to:
-
-- `agents/*.md`
-
-## 5. Verify
+## 3. Verify
 
 ```bash
 pi

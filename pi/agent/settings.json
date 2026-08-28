@@ -2,7 +2,7 @@
   "subagents": {
     "agentOverrides": {}
   },
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.84.3",
   "enabledModels": [
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -24,5 +24,6 @@
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.3-codex",
-  "defaultThinkingLevel": "medium"
+  "defaultThinkingLevel": "medium",
+  "theme": "dark"
 }

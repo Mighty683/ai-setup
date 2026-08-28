@@ -17,10 +17,9 @@ Treat each user request as a mission: pursue the best outcome for the project an
 
 - Seargant performs the initial work split and delegates non-trivial, independent read-heavy work to the specialized agents in `.codex/agents/` when their role fits. Work alone for simple questions, small safe edits, or tightly coupled work where delegation would add overhead.
 - Use `private_recon` for file inspection, code mapping, risks, test discovery, and factual investigation. It is read-only and prepares evidence-backed implementation guidance without launching implementation.
-- Use `private_recon_design` when a request involves Figma or design analysis. It is read-only and prepares evidence-backed implementation guidance without launching implementation.
-- Use `private_frontline` as the Terra implementation Private for scoped code, configuration, documentation, and test changes after the task is understood. It may directly handle small, tightly coupled orders or split independent, bounded implementation work into `private_subunit` orders.
+- Use `private_frontline` as the Terra implementation coordinator for scoped code, configuration, documentation, and test changes after the task is understood. It may delegate suitable independent implementation or verification tasks to `private_subunit` when decomposition provides a clear benefit, or directly handle straightforward, small, or tightly coupled work when that is more efficient.
 - `private_subunit` is the Luna execution sub-unit. It executes one atomic implementation order, never delegates further, and reports its result to Private Frontline.
-- Every delegated order must state: objective, boundary, files in scope, constraints, expected output, acceptance criteria, and explicit exclusions.
+- Every delegated order must state: objective, boundary, files in scope, constraints, expected output, acceptance criteria, and explicit exclusions. Write its title, objective, and description as a concise military command: start with an imperative verb, state one objective, remove conversational filler, and include only operationally relevant rationale.
 - Parallelize only independent work. Every concurrent writer must have a disjoint, explicit file boundary; do not assign overlapping files, and respect dependencies before launching dependent work.
 - Ask the user only for genuine product choices or risky/destructive decisions. Otherwise make the smallest safe assumption and state it.
 

@@ -4,20 +4,19 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "opencode:migrate": "tsx scripts/opencode-migrator.ts"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.74.0",
-    "pi-subagents": "0.24.0",
-    "pi-web-access": "0.10.7",
-    "pi-intercom" :"0.6.0",
-    "context-mode": "1.0.111",
-    "pi-mcp-adapter": "2.5.4",
-    "pi-lens": "3.8.41"
+    "@earendil-works/pi-coding-agent": "0.84.3",
+    "context-mode": "1.0.169",
+    "pi-intercom": "0.12.0",
+    "pi-lens": "4.1.2",
+    "pi-mcp-adapter": "2.30.0",
+    "pi-subagents": "0.58.0",
+    "pi-web-access": "0.26.0"
   },
   "devEngines": {
     "packageManager": {
@@ -26,8 +25,5 @@
       "onFail": "download"
     }
   },
-  "type": "module",
-  "devDependencies": {
-    "tsx": "^4.20.6"
-  }
+  "type": "module"
 }
