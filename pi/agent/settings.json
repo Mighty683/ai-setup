@@ -1,5 +1,11 @@
 {
   "subagents": {
+    "modelScope": {
+      "enforce": true,
+      "allow": [
+        "openai-codex/*"
+      ]
+    },
     "agentOverrides": {
       "seargant": {
         "defaultContext": "fork"

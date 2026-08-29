@@ -8,21 +8,9 @@ Use a symlink so `~/.pi` points to this repository `pi` folder:
 ln -sfn /home/might/projects/ai-setup/pi ~/.pi
 ```
 
-## 2. Configure providers
-
-### Codex
+## 2. Configure OpenAI Codex
 
 Start Pi, then run `/login` and choose **ChatGPT Plus/Pro (Codex)**.
-
-### Mistral
-
-Use an environment variable:
-
-```bash
-export MISTRAL_API_KEY="..."
-```
-
-Or copy `auth.template.json` to `auth.json` inside this folder and fill in your key locally.
 
 ## 3. Verify
 

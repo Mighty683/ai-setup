@@ -1,6 +1,0 @@
-{
-  "mistral": {
-    "type": "api_key",
-    "key": "MISTRAL_API_KEY"
-  }
-}
