@@ -7,7 +7,7 @@
       ]
     },
     "agentOverrides": {
-      "seargant": {
+      "coordinator": {
         "defaultContext": "fork"
       }
     }
