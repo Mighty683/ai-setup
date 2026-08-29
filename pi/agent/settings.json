@@ -8,15 +8,9 @@
   },
   "lastChangelogVersion": "0.84.3",
   "enabledModels": [
+    "gpt-5.6-sol",
     "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.3-codex",
-    "mistral-small-latest",
-    "mistral-medium-latest",
-    "devstral-latest"
+    "gpt-5.6-luna"
   ],
   "packages": [
     "npm:pi-subagents@0.58.0",
@@ -26,7 +20,7 @@
     "npm:pi-web-access@0.26.0"
   ],
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
+  "defaultModel": "gpt-5.6-terra",
   "defaultThinkingLevel": "medium",
   "theme": "dark"
 }
