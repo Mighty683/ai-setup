@@ -9,6 +9,30 @@
     "agentOverrides": {
       "coordinator": {
         "defaultContext": "fork"
+      },
+      "claude-code": {
+        "disabled": true
+      },
+      "claude-code-writer": {
+        "disabled": true
+      },
+      "codex-exec": {
+        "disabled": true
+      },
+      "codex-exec-writer": {
+        "disabled": true
+      },
+      "cursor-agent": {
+        "disabled": true
+      },
+      "cursor-agent-writer": {
+        "disabled": true
+      },
+      "reviewer": {
+        "disabled": true
+      },
+      "oracle": {
+        "disabled": true
       }
     }
   },
