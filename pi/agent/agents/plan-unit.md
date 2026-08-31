@@ -3,6 +3,7 @@ name: "plan-unit"
 description: "Evidence-backed planning and coordination; model hint: Terra"
 tools: read, bash, subagent, lsp_diagnostics
 acceptanceRole: "read-only"
+completionGuard: false
 ---
 
 # Plan Unit
