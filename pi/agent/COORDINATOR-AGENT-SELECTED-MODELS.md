@@ -1,38 +1,59 @@
-# Coordinator-selected models
+# Coordinator-selected models and complex-work workflow
 
 ## Outcome
 
-The Coordinator selects a model for every `plan-unit`, `work-unit`, and nested `coordinator` launch. A `plan-unit` launches bounded read-only `scout` research with `openai-codex/gpt-5.6-luna`. Every selection is passed through the `pi-subagents` per-launch `model` field; agent files do not statically pin a runtime model.
+The parent Coordinator owns planning, implementation waves, review synthesis, integration, and final validation. It selects a model for every `plan-unit`, `work-unit`, and `review-unit` launch through the `pi-subagents` per-launch `model` field; agent files do not statically pin a runtime model.
+
+A `plan-unit` is read-only. It may launch bounded Luna `scout` research, but it never launches a writer. A `work-unit` is the only delegated implementation role and owns every mutation in a complex workflow. A `review-unit` is a focused read-only lane intended for fresh-context parallel review waves.
 
 ## Workflow
 
 ```text
 Coordinator
-├─ plan-unit                 (uses Luna scouts; returns an evidence-backed plan)
-│  └─ scout                  (read-only codebase/docs research)
-├─ work-unit                 (implements one approved plan item)
-└─ coordinator               (owns a bounded nested planning/execution tree)
-   ├─ plan-unit
-   │  └─ scout
-   └─ work-unit
+├─ parallel evidence wave
+│  ├─ plan-unit             dependency/conflict graph
+│  │  └─ scout × 1-2        bounded local source and test seams
+│  └─ researcher            external evidence when required
+├─ implementation wave
+│  ├─ work-unit             one writer for a shared checkout, or
+│  └─ runs.all(work-unit)   only independent Pi-worktree lanes
+├─ parallel review wave
+│  ├─ review-unit           correctness and regressions
+│  ├─ review-unit           tests and production-path evidence
+│  └─ review-unit           integration/architecture/domain angle
+├─ work-unit                one synthesized fix lane
+└─ aggregate gate           one expensive integrated validation
 ```
 
-Plans may nest further coordinators when that reduces coordination risk. Each nested coordinator receives an explicit boundary, deliverable, return condition, and depth or budget limit.
+Use `/complex-work <request>` for the repeatable workflow. It loads the `complex-work-orchestration` skill and asks the Coordinator to publish the acceptance contract, lane board, and parallelism audit before mutation. Durable `.chain.md` files are legacy and are not authored; runtime composition uses `workflowScript`, `runs.all`, and `runs.run`.
 
-## Multi-agent execution
+## Parallelism policy
 
-The Coordinator is the sole implementation-wave and integration owner. It records the repository baseline and a lane board before mutation, then runs only independent writer lanes concurrently. Every concurrent writer uses Pi-managed isolation through `worktree: true`, with one writer per checkout. Dependent or overlapping lanes run sequentially.
+The Coordinator records the repository baseline and lane board before mutation. Every complex plan must identify:
 
-Each lane returns its worktree and branch, changed files, commit or explicit uncommitted state, validation, assumptions, and residual risks. The Coordinator integrates accepted lanes one at a time in dependency order, escalates semantic conflicts, and runs aggregate validation on the integrated result. Worktrees remain available until their handoffs are durable and no run owns them; failed worktrees are preserved for diagnosis.
+- independent read-only evidence and review lanes;
+- independent writer lanes with explicit contracts and `worktree: true`;
+- serial dependency edges with their exact reason;
+- hotspot files or mutable contracts that should be decomposed before future writer fanout.
+
+Parallelize judgment aggressively when angles are distinct. Parallelize writes conservatively. One writer owns each checkout, and the Coordinator integrates accepted commits one at a time. Full build or test gates that share a build cache run once after integration instead of concurrently.
+
+After each substantial candidate, run two to four fresh-context `review-unit` lanes in one `runs.all` wave. Synthesize findings once and send accepted fixes to one writer. Default to two review rounds per milestone; a third requires a concrete high-risk reason.
 
 ## Routing policy
 
 | Task | Model |
 | --- | --- |
-| bounded lookup, routine verification, atomic low-risk work | `openai-codex/gpt-5.6-luna` |
-| ambiguous, multi-file, integration, debugging, or high-risk work | `openai-codex/gpt-5.6-terra` |
+| bounded lookup, local scout, narrow test/docs review, routine verification | `openai-codex/gpt-5.6-luna` |
+| ambiguous planning, cross-contract review, persistence, multi-file integration, debugging, high-risk work | `openai-codex/gpt-5.6-terra` |
 
-The Coordinator chooses the least capable enabled OpenAI model that can complete the item, passes it explicitly, and records `MODEL` plus a one-line rationale. Luna and Terra are defaults, not a hard task-tier allowlist.
+The Coordinator chooses the least capable enabled OpenAI model that can complete the item and records `MODEL` plus a one-line rationale. Luna and Terra are defaults, not a hard task-tier allowlist.
+
+## Runtime bounds
+
+`extensions/subagent/config.json` limits nested delegation to depth 2, allowing Coordinator → plan-unit → scout while preventing deeper hidden coordination. It enforces at most four cumulative logical child admissions in each top-level workflow run and limits a parent session to three active top-level async workflows. A direct `runs.all` wave can therefore contain at most four children; a workflow that delegates nested scouts has fewer remaining admissions. These bounds prevent accidental swarms; they do not create parallelism by themselves.
+
+Do not start a fanout while Pi is installing or updating packages. Stabilize package state serially, reload Pi, and run `/subagents-doctor` before retrying.
 
 ## Boundary
 

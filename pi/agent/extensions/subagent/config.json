@@ -1,3 +1,5 @@
 {
-  "maxSubagentDepth": 5
+  "maxSubagentDepth": 2,
+  "maxSubagentSpawnsPerRun": 4,
+  "maxActiveAsyncRunsPerSession": 3
 }
