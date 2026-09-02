@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.pi.dev/schemas/complex-work-gates.schema.json",
+  "title": "Complex Work Runtime Gates",
+  "description": "Project-owned deterministic commands copied into pi-subagents acceptance.verify and aggregate integration validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "focused",
+    "aggregate"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    },
+    "focused": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/focusedGate"
+      }
+    },
+    "aggregate": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/gate"
+      }
+    }
+  },
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "command"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "default": ".",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).*$"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "focusedGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "paths",
+        "command"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "default": ".",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).*$"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    }
+  }
+}
