@@ -1,6 +1,6 @@
 ---
 name: "review-unit"
-description: "Focused evidence-backed review lane for parallel review waves; model hint: Luna or Terra"
+description: "Focused evidence-backed review lane for parallel review waves"
 tools: read, bash, lsp_diagnostics
 acceptanceRole: "read-only"
 completionGuard: false

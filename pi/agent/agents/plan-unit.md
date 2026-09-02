@@ -1,6 +1,6 @@
 ---
 name: "plan-unit"
-description: "Evidence-backed planning informed by Luna scout research; model hint: Terra"
+description: "Evidence-backed planning informed by Luna scout research"
 tools: read, bash, subagent, lsp_diagnostics
 acceptanceRole: "read-only"
 completionGuard: false

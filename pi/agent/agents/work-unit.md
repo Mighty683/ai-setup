@@ -1,6 +1,6 @@
 ---
 name: "work-unit"
-description: "Scoped implementation; model hint: Luna or Terra"
+description: "Scoped implementation"
 tools: read, bash, edit, write, lsp_diagnostics
 acceptanceRole: "writer"
 inheritSkills: false
