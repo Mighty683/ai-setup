@@ -1,9 +1,11 @@
 /**
  * Pi Sound Notify Extension
  *
- * Plays a local attention sound after Pi has fully settled and is waiting for
- * the next user prompt. The `agent_settled` event is deliberately used instead
- * of `agent_end`, which may be followed by retries, compaction, or queued work.
+ * Plays a local attention sound after the parent Pi session has fully settled
+ * and is waiting for the next user prompt. The `agent_settled` event is
+ * deliberately used instead of `agent_end`, which may be followed by retries,
+ * compaction, or queued work. Subagent sessions never notify: their completion
+ * is delivered back to the parent, which is the session that can need the user.
  *
  * Set PI_SOUND_DISABLED=1 to disable sounds.
  */
@@ -13,6 +15,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const WINDOWS_BEEP = "[console]::beep(880, 160)";
 const IS_WSL = Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
+const IS_SUBAGENT_CHILD = process.env.PI_SUBAGENT_CHILD === "1";
 
 function ringTerminalBell(): void {
   process.stdout.write("\x07");
@@ -65,6 +68,8 @@ function playSound(): void {
 }
 
 export default function (pi: ExtensionAPI) {
+  if (IS_SUBAGENT_CHILD) return;
+
   pi.on("agent_settled", () => {
     playSound();
   });
