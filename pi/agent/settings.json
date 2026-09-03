@@ -6,46 +6,6 @@
         "openai-codex/*"
       ]
     },
-    "watchdog": {
-      "enabled": true,
-      "agentEndTimeoutMs": 120000,
-      "main": {
-        "enabled": true,
-        "model": "openai-codex/gpt-5.6-sol",
-        "thinking": "high"
-      },
-      "children": {
-        "enabled": true,
-        "model": "openai-codex/gpt-5.6-sol",
-        "thinking": "high",
-        "autoFollow": {
-          "blockers": false,
-          "maxAttempts": 2,
-          "stalemateRepeats": 2
-        }
-      },
-      "scope": {
-        "enabled": true
-      },
-      "cadence": {
-        "everyNTools": null
-      },
-      "autoFollow": {
-        "blockers": false,
-        "maxAttempts": 2,
-        "stalemateRepeats": 2
-      },
-      "asyncCompletion": {
-        "enabled": false,
-        "autoFollowBlockers": false
-      },
-      "lsp": {
-        "enabled": true,
-        "timeoutMs": 5000,
-        "maxFiles": 30,
-        "maxDiagnostics": 100
-      }
-    },
     "agentOverrides": {
       "coordinator": {
         "defaultContext": "fork"
