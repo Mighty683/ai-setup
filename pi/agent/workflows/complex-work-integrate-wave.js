@@ -12,6 +12,7 @@ const integration = await runs.run("integrate-" + pendingIntegration.wave.id, {
     "Inspect each handoff/artifact, apply only successful scoped changes in dependency order, and stop for semantic conflicts, failed acceptance, or a cross-lane decision through contact_supervisor.",
     "Do not overwrite unrelated work. Do not merge branches, rebase, reset, clean, stage, push, publish, or release.",
     "Run only focused automated checks. Do not run smoke, manual, or end-to-end smoke tests.",
+    "Verify that this wave's lane task records under docs/tasks/ have an accurate Description, Research summary, and Status (todo, started, or finished). Do not close a wave that leaves the application unrunnable; report the exact runnable-state evidence or blocker.",
     "Wave and lane handoffs:",
     JSON.stringify(pendingIntegration)
   ].join("\n"),

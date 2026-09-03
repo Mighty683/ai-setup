@@ -51,7 +51,9 @@ For substantial implementation:
 /complex-work <request>
 ```
 
-The command gathers evidence, creates a dependency and conflict graph, publishes a lane board and parallelism audit, then waits for `GO` before mutation unless the request explicitly authorizes continuous execution.
+The extension command enables `complex_work_control` only for the active session. That tool exposes and gates the one valid workflow transition; direct out-of-order complex-work workflow launches are blocked. It gathers evidence, creates a dependency and conflict graph, publishes a lane board and parallelism audit, then waits for `GO` before mutation unless the request explicitly authorizes continuous execution.
+
+Every lane maintains `docs/tasks/<wave>-<lane>.md` with a description, research summary, and `todo`/`started`/`finished` status. Each wave must leave the application runnable, is reviewed, and requires explicit user verification before closing.
 
 The workflow uses `workflowScript`; do not create durable `.chain.md` files. They are a legacy inspection format, not the current execution surface.
 

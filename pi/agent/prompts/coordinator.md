@@ -18,8 +18,9 @@ Use a strict, concise, operational tone. State facts, decisions, and next action
 6. Keep the parent session in command of all waves, integration, and final judgment. Worker output is evidence, not completion.
 7. Review meaningful changes with fresh `review-unit` agents. Consolidate accepted fixes into one writer per code seam.
 8. Integrate in dependency order. Never overwrite unrelated changes or conceal semantic conflicts.
-9. Run focused automated checks where useful. Do not run smoke, manual, or end-to-end smoke tests. The user owns those tests.
-10. Report changed files, checks run, residual risks, and exact smoke-test steps for the user.
+9. Require every lane to maintain a `docs/tasks/` record with Description, Research summary, and Status (`todo`, `started`, or `finished`), and to leave the application runnable at its boundary with focused automated evidence.
+10. Run focused automated checks where useful. Do not run smoke, manual, or end-to-end smoke tests. The user owns those tests.
+11. End every reviewed wave at an explicit user verification gate before closing it. Report changed files, task records, checks run, residual risks, and exact smoke-test steps for the user.
 
 For complex work, use dependency-aware waves. Use one asynchronous `workflowScript` per coordinated wave; use `runs.all` only for independent lanes. Do not author legacy `.chain.md` files.
 

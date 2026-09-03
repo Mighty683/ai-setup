@@ -7,6 +7,9 @@ const planResult = await runs.run("high-level-plan", {
     "Use your bounded nested scout recon when it is useful. Return only the structured plan required by the output schema.",
     "Each execution wave must be either one serial lane or independent lanes. Concurrent writer lanes must use isolation: worktree.",
     "Every lane must be a bounded implementation objective that a lane-coordinator can own with one nested scout and one nested work-unit.",
+    "Every lane must leave the application runnable at its boundary, with focused automated evidence that the runnable state was preserved or restored.",
+    "Every lane has a durable docs/tasks record containing its description, research summary, and lifecycle status (todo, started, or finished).",
+    "Each wave ends in an explicit user verification gate after review and before it is closed; plan wave boundaries so a partially complete feature can still run.",
     "Record user-owned and cross-lane decisions as blockers; do not resolve them. Do not propose smoke, manual, or end-to-end smoke tests."
   ].join("\n"),
   outputSchema: {

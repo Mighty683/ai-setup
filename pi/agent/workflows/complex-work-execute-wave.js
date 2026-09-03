@@ -22,14 +22,17 @@ if (nextWave.parallel && nextWave.lanes.length > 1 && nextWave.lanes.some((lane)
 }
 
 function laneTask(lane) {
+  const taskRecord = "docs/tasks/" + nextWave.id + "-" + lane.id + ".md";
   return [
     "Own this approved implementation lane. You are a headless lane coordinator, not the integration owner.",
     "Use one focused nested scout, then one nested work-unit. Keep all mutation in the lane checkout.",
     "Ask the parent through contact_supervisor and wait for any cross-lane, architecture, scope, authority, or acceptance decision.",
     "Do not run smoke, manual, or end-to-end smoke tests.",
-    "Return the nested work-unit handoff plus any blocker.",
+    "Create and maintain the task record at " + taskRecord + ". It must contain Description, Research summary, Status (todo, started, or finished), acceptance criteria, runnable-state evidence, and blockers. Start it before implementation and mark it finished only when the lane is complete; otherwise leave an accurate todo/started status.",
+    "Leave the application runnable at the lane boundary. Run focused automated checks that provide evidence for that claim, and report any gap honestly.",
+    "Return the nested work-unit handoff plus the task record path and any blocker.",
     "Lane directive:",
-    JSON.stringify(lane)
+    JSON.stringify({ ...lane, taskRecord })
   ].join("\n");
 }
 

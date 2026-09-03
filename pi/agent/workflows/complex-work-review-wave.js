@@ -8,6 +8,7 @@ const reviewContext = [
   "Review the active-checkout diff created by the integrated complex-work wave.",
   "Inspect the actual source and diff; the integration handoff is evidence, not authority.",
   "Do not edit, install dependencies, stage, commit, merge, clean, or run smoke, manual, or end-to-end smoke tests.",
+  "Confirm the wave leaves the application runnable from the available focused automated evidence, and check that its docs/tasks records contain Description, Research summary, and an accurate lifecycle Status.",
   "Wave:",
   JSON.stringify(pendingReview.wave),
   "Integration handoff:",
