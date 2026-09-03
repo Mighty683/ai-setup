@@ -25,7 +25,7 @@ Coordinator
 └─ aggregate gate           one expensive integrated validation
 ```
 
-Use `/complex-work <request>` for the repeatable workflow. It loads the `complex-work-orchestration` skill and asks the Coordinator to publish the acceptance contract, lane board, and parallelism audit before mutation. Durable `.chain.md` files are legacy and are not authored; runtime composition uses `workflowScript`, `runs.all`, and `runs.run`.
+Use `/complex-work <request>` for the repeatable workflow. The prompt contains the complete orchestration procedure and requires a work plan before mutation. Durable `.chain.md` files are legacy and are not authored; runtime composition uses `workflowScript`, `runs.all`, and `runs.run`.
 
 ## Parallelism policy
 

@@ -42,7 +42,6 @@ Confirm these commands are visible:
 
 - `/coordinator`
 - `/complex-work`
-- `/skill:complex-work-orchestration`
 
 ## 5. Use the complex workflow
 
