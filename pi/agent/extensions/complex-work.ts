@@ -24,6 +24,12 @@ const controlParams = Type.Object({
       description: "Mission id returned by the planning workflow",
     }),
   ),
+  resultStatus: Type.Optional(
+    Type.String({
+      description:
+        "Exact status returned by the completed workflow; required by action complete",
+    }),
+  ),
 });
 
 const workflowPaths = {
@@ -45,6 +51,14 @@ type Phase =
   | "reviewing"
   | "verifying"
   | "closing";
+
+const completionStatuses: Partial<Record<Phase, string>> = {
+  executing: "integration-required",
+  integrating: "review-required",
+  reviewing: "review-disposition-required",
+  verifying: "user-verification-recorded",
+  closing: "wave-closed",
+};
 
 type ComplexWorkState = {
   request: string;
@@ -119,10 +133,11 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       action === "plan"
         ? "Start this as a mission-backed asynchronous workflow from the target repository; do not set mission: false."
         : `Attach it to missionId ${state?.missionId ?? "<mission-id>"} and launch asynchronously from the target repository.`;
+    const expectedStatus = completionStatuses[state?.phase ?? "ready-to-plan"];
     const next =
       action === "plan"
         ? 'When the plan result is available, call complex_work_control with action "plan-complete" and its missionId.'
-        : 'When this workflow result is available, call complex_work_control with action "complete".';
+        : `Only after the workflow succeeds with status ${expectedStatus}, call complex_work_control with action "complete" and resultStatus "${expectedStatus}". On failure, report the blocker and leave this phase unchanged.`;
     return [
       `Authorized workflow: ${action}.`,
       `Call subagent with workflowScriptPath: ${workflowPaths[action]}.`,
@@ -219,6 +234,12 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         const next = nextPhase[state.phase];
         if (!next)
           throw new Error(`complete is not valid during ${state.phase}.`);
+        const expectedStatus = completionStatuses[state.phase];
+        if (!expectedStatus || params.resultStatus !== expectedStatus) {
+          throw new Error(
+            `Refusing to advance ${state.phase}: complete requires resultStatus ${expectedStatus ?? "<none>"} from a successful workflow result.`,
+          );
+        }
         state = {
           ...state,
           phase: next,
@@ -276,7 +297,8 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
   pi.on("tool_call", (event) => {
     if (!state || !isRootSession || event.toolName !== "subagent") return;
     const input = event.input as { workflowScriptPath?: unknown };
-    if (typeof input.workflowScriptPath !== "string") return;
+    const workflowScriptPath = String(input.workflowScriptPath ?? "");
+    if (!workflowScriptPath) return;
     const expected = state.expectedAction;
     if (!expected) {
       return {
@@ -284,7 +306,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         reason: `Complex-work is active. Authorize the next transition with ${CONTROL_TOOL} first.`,
       };
     }
-    if (input.workflowScriptPath !== workflowPaths[expected]) {
+    if (workflowScriptPath !== workflowPaths[expected]) {
       return {
         block: true,
         reason: `Only ${workflowPaths[expected]} is authorized during the ${state.phase} phase.`,

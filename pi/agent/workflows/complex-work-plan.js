@@ -4,11 +4,12 @@ const planResult = await runs.run("high-level-plan", {
   task: [
     "Create the dependency-aware plan for the current complex-work request in the inherited conversation.",
     "Do not implement. Inspect repository state first and protect unrelated work.",
-    "Use your bounded nested scout recon when it is useful. Return only the structured plan required by the output schema.",
+    "Use your bounded nested scout recon when it is useful. Your final action must call the injected structured_output tool exactly once with the complete schema payload. Do not finish with STATUS prose or an ordinary text response.",
     "Each execution wave must be either one serial lane or independent lanes. Concurrent writer lanes must use isolation: worktree.",
     "Every lane must be a bounded implementation objective that a lane-coordinator can own with one nested scout and one nested work-unit.",
     "Every lane must leave the application runnable at its boundary, with focused automated evidence that the runnable state was preserved or restored.",
-    "Every lane has a durable docs/tasks record containing its description, research summary, and lifecycle status (todo, started, or finished).",
+    "Every lane has one durable docs/tasks record containing its description, research summary, and lifecycle status (todo, started, or finished). The executor assigns the canonical docs/tasks/<wave>-<lane>.md path: do not invent or embed a task-record filename in objectives, scope, acceptance criteria, or prose.",
+    "Plan the full dependency graph once. If the user requests fresh per-wave planning, make that an explicit planning-only blocker rather than claiming the fixed execution workflow will create planners automatically.",
     "Each wave ends in an explicit user verification gate after review and before it is closed; plan wave boundaries so a partially complete feature can still run.",
     "Record user-owned and cross-lane decisions as blockers; do not resolve them. Do not propose smoke, manual, or end-to-end smoke tests."
   ].join("\n"),
@@ -70,6 +71,8 @@ const plan = planResult.structuredOutput;
 await state.set("complexWork", {
   plan,
   completedWaveIds: [],
+  activeExecution: null,
+  failedExecution: null,
   pendingIntegration: null,
   pendingReview: null
 });

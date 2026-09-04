@@ -9,7 +9,8 @@ const integration = await runs.run("integrate-" + pendingIntegration.wave.id, {
   task: [
     "Integrate exactly this completed complex-work wave into the active checkout.",
     "You are the sole integration writer. Treat every lane result as a candidate, not authority.",
-    "Inspect each handoff/artifact, apply only successful scoped changes in dependency order, and stop for semantic conflicts, failed acceptance, or a cross-lane decision through contact_supervisor.",
+    "Inspect each handoff/artifact, including durable patch paths recorded after managed-worktree cleanup. Apply only successful scoped changes in dependency order.",
+    "If you encounter a semantic conflict, failed acceptance, missing patch, or cross-lane decision, stop and return an integration-failed blocker. Do not pause or detach this workflow through contact_supervisor.",
     "Do not overwrite unrelated work. Do not merge branches, rebase, reset, clean, stage, push, publish, or release.",
     "Run only focused automated checks. Do not run smoke, manual, or end-to-end smoke tests.",
     "Verify that this wave's lane task records under docs/tasks/ have an accurate Description, Research summary, and Status (todo, started, or finished). Do not close a wave that leaves the application unrunnable; report the exact runnable-state evidence or blocker.",
