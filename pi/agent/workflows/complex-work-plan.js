@@ -24,7 +24,7 @@ const revisionContext = correctionEvidence
     ].join("\n")
   : "This is the initial plan for the mission.";
 
-const planResult = await runs.run("high-level-plan", {
+let planResult = await runs.run("high-level-plan", {
   agent: "plan-unit",
   context: "fork",
   task: [
@@ -104,8 +104,18 @@ const planResult = await runs.run("high-level-plan", {
   }
 });
 
+if ((!planResult.ok || !planResult.structuredOutput) && planResult.runId) {
+  planResult = await runs.run("high-level-plan-recovery", {
+    resume: planResult.runId,
+    task: [
+      "Your previous planning response was rejected because it omitted the required structured_output payload.",
+      "Do not repeat research or return prose. Call structured_output exactly once with the complete plan schema payload now."
+    ].join("\n")
+  });
+}
+
 if (!planResult.ok || !planResult.structuredOutput) {
-  throw new Error("The planning lane did not return a valid structured plan.");
+  throw new Error("The planning lane did not return a valid structured plan after its recovery attempt.");
 }
 
 const plan = planResult.structuredOutput;
