@@ -36,24 +36,28 @@ Confirm these custom agents are available:
 
 - `research-unit`
 - `plan-unit`
+- `sergeant-unit`
 - `work-unit`
 - `review-unit`
 
 Confirm these commands are visible:
 
 - `/coordinator`
-- `/complex-work`
-- `/complex-work-plan`
+- `/research`
+- `/plan`
+- `/sergeant`
+- `/complex-work` (research alias)
+- `/complex-work-plan` (plan alias)
 
-## 5. Research, plan, and implement
+## 5. Issue independent unit orders
 
-Run `/complex-work [request]` to fork a research agent from the current conversation. Its findings return here for you to review.
+Use `/research [objective]` to save findings, `/plan [guidance]` to write executable assignments, and `/sergeant [guidance]` to execute through subagents and record completion evidence. All three update the same task file. Choose any order; nothing autostarts the next stage, and calling sergeant authorizes execution without an extra approval ceremony.
 
-Run `/complex-work-plan [guidance]` when ready for a plan. The planning agent uses the conversation, research, and feedback. The main agent presents the plan and waits for your explicit acceptance before implementing it.
+Each command accepts `--task "docs/tasks/my task.md"` for an explicit path. Otherwise it reuses the session's selected path (retained across reload/resume), or chooses a collision-safe name under `docs/tasks/`. Fresh sessions work with an explicit objective or existing task; no objective/history means ask, not launch. Existing task sections and human edits are preserved.
 
-After acceptance, the main agent implements and delegates useful assignments, then presents the result for your acceptance or correction. Research, planning, and work units may spawn their own subagents. All agents share the current checkout without worktrees; parallel writers coordinate file ownership.
+The units are also ordinary subagents callable by other agents; supply the objective and task path. Research/plan may edit only the assigned task file by prompt convention; delegated research stays read-only. Sergeant owns the execution record, workers return results. All agents share the checkout without worktrees: one writer per cwd, serialized even for disjoint files; parallelize read-only work. Do not issue overlapping writer orders.
 
-Use Pi's normal `/subagents` interface for running agents. See [command behavior and implementation](../../docs/complex-work.md).
+Use Pi's normal `/subagents` interface for running agents. See [usage, implementation, and limitations](../../docs/complex-work.md).
 
 ## 6. Secrets
 
