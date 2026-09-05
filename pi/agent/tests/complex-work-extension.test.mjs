@@ -54,7 +54,7 @@ function commandContext() {
   };
 }
 
-test("steering commands execute gated transitions without prompting the agent", async () => {
+test("complex-work starts planning and dispatches the authorized workflow", async () => {
   const harness = extensionHarness();
   const notifications = [];
   const context = {
@@ -62,7 +62,6 @@ test("steering commands execute gated transitions without prompting the agent", 
     ui: { notify: (...args) => notifications.push(args) },
   };
   await harness.commands.get("complex-work").handler("review loop", context);
-  await harness.commands.get("complex-work-plan").handler("", context);
 
   const status = await harness.tools
     .get("complex_work_control")
@@ -70,8 +69,9 @@ test("steering commands execute gated transitions without prompting the agent", 
 
   assert.equal(status.details.state.phase, "planning");
   assert.equal(status.details.state.expectedAction, "plan");
-  assert.match(notifications.at(-1)[0], /Authorized workflow: plan/);
-  assert.equal(harness.userMessages.length, 0);
+  assert.match(notifications.at(-1)[0], /planning started/);
+  assert.equal(harness.userMessages.length, 1);
+  assert.match(harness.userMessages[0], /Launch the already-authorized/);
 });
 
 test("planning retry requires an explicitly recorded workflow failure", async () => {
@@ -81,7 +81,6 @@ test("planning retry requires an explicitly recorded workflow failure", async ()
     .handler("review loop", commandContext());
   const control = harness.tools.get("complex_work_control");
 
-  await control.execute("plan", { action: "plan" });
   harness.handlers.get("tool_call")({
     toolName: "subagent",
     input: {
@@ -113,7 +112,6 @@ test("replanning launch cannot switch mission IDs", async () => {
     .handler("review loop", commandContext());
   const control = harness.tools.get("complex_work_control");
 
-  await control.execute("plan", { action: "plan" });
   harness.handlers.get("tool_call")({
     toolName: "subagent",
     input: {

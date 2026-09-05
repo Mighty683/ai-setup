@@ -635,7 +635,11 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         }
         try {
           const result = await executeControlAction({ action });
-          ctx.ui.notify(result.content[0].text, "info");
+          const content = result.content[0];
+          ctx.ui.notify(
+            content?.type === "text" ? content.text : describeState(state),
+            "info",
+          );
         } catch (error) {
           ctx.ui.notify(
             error instanceof Error ? error.message : String(error),
@@ -691,7 +695,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
 
   pi.registerCommand("complex-work", {
     description: "Start a gated, dependency-aware complex-work session",
-    handler: (args, ctx) => {
+    handler: async (args, ctx) => {
       const request = args.trim();
       if (!request) {
         ctx.ui.notify("Usage: /complex-work <request>", "warning");
@@ -723,11 +727,11 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       persist();
       enableControl();
       pi.setSessionName(`Complex work: ${request.slice(0, 72)}`);
-      ctx.ui.notify(
-        `Complex-work session started. Run /complex-work-plan to authorize planning.`,
-        "info",
+      await executeControlAction({ action: "plan" });
+      ctx.ui.notify("Complex-work planning started.", "info");
+      pi.sendUserMessage(
+        `Launch the already-authorized complex-work planning workflow now using ${workflowPaths.plan}. Start it as a mission-backed asynchronous workflow from the target repository. Do not call ${CONTROL_TOOL} again before launching it.`,
       );
-      return Promise.resolve();
     },
   });
 }
