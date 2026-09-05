@@ -1,5 +1,7 @@
 {
   "subagents": {
+    "worktree": false,
+    "maxSubagentDepth": 4,
     "modelScope": {
       "enforce": true,
       "allow": [

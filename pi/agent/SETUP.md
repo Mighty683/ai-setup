@@ -34,6 +34,7 @@ Show me the available subagents.
 
 Confirm these custom agents are available:
 
+- `research-unit`
 - `plan-unit`
 - `work-unit`
 - `review-unit`
@@ -42,20 +43,17 @@ Confirm these commands are visible:
 
 - `/coordinator`
 - `/complex-work`
+- `/complex-work-plan`
 
-## 5. Use the complex workflow
+## 5. Research, plan, and implement
 
-For substantial implementation:
+Run `/complex-work [request]` to fork a research agent from the current conversation. Its findings return here for you to review.
 
-```text
-/complex-work <request>
-```
+Run `/complex-work-plan [guidance]` when ready for a plan. The planning agent uses the conversation, research, and feedback. The main agent presents the plan and waits for your explicit acceptance before implementing it.
 
-The main LLM inspects the request and chooses assignments and dependencies. The controller records work and evidence without prescribing stages or follow-up agents. Use `/complex-work-go <revision>` to authorize proposed scope and commands. Within that authority, the LLM can queue work, inspect results, and choose corrections. Integration requires matching passing check and independent review evidence. `/complex-work-verify <revision>` applies the final reviewed patch after the LLM requests delivery.
+After acceptance, the main agent implements and delegates useful assignments, then presents the result for your acceptance or correction. Research, planning, and work units may spawn their own subagents. All agents share the current checkout without worktrees; parallel writers coordinate file ownership.
 
-Use `/complex-work-status`, `/complex-work-pause`, `/complex-work-resume`, `/complex-work-steer`, `/complex-work-retry`, `/complex-work-replan`, and `/complex-work-cancel` for control. Retry and replan ask the main LLM to reassess; they do not restart a fixed sequence. `/complex-work-policy {"checkpoints":"task"}` enables approval of each integration work ID. The model-facing tools expose the work ledger and accept scope, work, and delivery proposals; only user commands grant scope and delivery approval.
-
-See [architecture, controls and limits](../../docs/complex-work.md). The old wave scripts and `finish`/`abandon` phase commands are retired. Agents are defined by the coordinating LLM and registered per operation by the extension; child agents cannot delegate. Set `PI_SOUND_DISABLED=1` to disable attention bells.
+Use Pi's normal `/subagents` interface for running agents. See [command behavior and implementation](../../docs/complex-work.md).
 
 ## 6. Secrets
 

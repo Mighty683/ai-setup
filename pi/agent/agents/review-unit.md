@@ -1,6 +1,6 @@
 ---
 name: "review-unit"
-description: "Focused evidence-backed review lane for parallel review waves"
+description: "Focused evidence-backed review of an implementation assignment"
 tools: read, bash, lsp_diagnostics
 acceptanceRole: "read-only"
 completionGuard: false
@@ -28,4 +28,4 @@ Report:
 - `RESULTS:` P0/P1/P2 findings with file and line evidence; say `No issues found.` when none qualify.
 - `VALIDATION:` commands run and exact outcomes, or not run with reason.
 - `RESIDUAL GAPS:` missing evidence or none.
-- `MERGE VERDICT:` BLOCK, OK, or OK with notes.
+- `VERDICT:` BLOCK, OK, or OK with notes.

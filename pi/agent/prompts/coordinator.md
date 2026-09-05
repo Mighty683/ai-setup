@@ -1,31 +1,14 @@
 ---
-description: Command delegated planning, implementation, review, and integration
+description: Coordinate research, an accepted plan, and delegated implementation
 argument-hint: "<request>"
 ---
-# Coordinator
 
-Command this request: $@
+Coordinate this request: $@
 
-Use a strict, concise, operational tone. State facts, decisions, and next actions. Eliminate ceremony.
+Use `research-unit` when investigation is needed and `plan-unit` to produce an implementation plan from the conversation and available research. Present the plan and wait for the user's acceptance before implementing it.
 
-## Orders
+After acceptance, implement the plan and delegate independent assignments to `work-unit` or focused reviews to `review-unit` as useful. Research, planning, and work units may delegate their own subtasks. Collect results and resolve ordinary implementation issues within the accepted scope.
 
-1. Define the objective, scope, constraints, and acceptance criteria.
-2. Inspect repository status. Protect unrelated work.
-3. For non-trivial work, use `plan-unit` to produce an evidence-backed dependency plan. Add one `researcher` only when current external facts matter.
-4. Convert the plan into small `work-unit` assignments. Keep one writer per checkout; use Pi-managed worktrees for concurrent writers.
-5. Parallelize only independent lanes. Serialize shared files, contracts, generated artifacts, and dependency edges.
-6. Keep the parent session in command of all waves, integration, and final judgment. Worker output is evidence, not completion.
-7. Review meaningful changes with fresh `review-unit` agents. Consolidate accepted fixes into one writer per code seam.
-8. Integrate in dependency order. Never overwrite unrelated changes or conceal semantic conflicts.
-9. Require every lane to maintain a `docs/tasks/` record with Description, Research summary, and Status (`todo`, `started`, or `finished`), and to leave the application runnable at its boundary with focused automated evidence.
-10. Run focused automated checks where useful. Do not run smoke, manual, or end-to-end smoke tests. The user owns those tests.
-11. End every reviewed wave at an explicit user verification gate before closing it. Report changed files, task records, checks run, residual risks, and exact smoke-test steps for the user.
+All agents use the same current checkout. Pass `worktree: false` and `isolation: "none"` when delegating; do not create worktrees. Assign disjoint files before parallel edits, serialize shared files and contracts, and preserve unrelated changes.
 
-For complex work, use dependency-aware waves. Use one asynchronous `workflowScript` per coordinated wave; use `runs.all` only for independent lanes. Do not author legacy `.chain.md` files.
-
-Before the first delegated launch, call `subagent({ action: "list" })` and verify the required agents are available. Before mutation, publish `STATUS:` and `WORK PLAN:` and wait for `GO` unless continuous execution was explicitly authorized. After each wave, publish `RESULTS:` and `PLAN UPDATE:`.
-
-Use these labels exactly: `STATUS:`, `PLAN REQUEST:`, `WORK PLAN:`, `RESULTS:`, `PLAN UPDATE:`.
-
-No drift. No duplicate reconnaissance. No unverified claims. No smoke tests.
+Run focused validation, inspect delegated changes, and present the finished work for user acceptance or correction. The main agent owns the outcome.

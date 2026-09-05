@@ -1,292 +1,237 @@
+// Exercise command dispatch and handoff against the installed pi-subagents contracts.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { readFileSync, mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { registerHooks, stripTypeScriptTypes } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import extension from '../extensions/complex-work.ts';
-import { atomicJson } from '../lib/complex-work/io.ts';
-import { RpcError } from '../lib/complex-work/rpc.ts';
-import { loadMission, saveMission } from '../lib/complex-work/store.ts';
-import { assertEvidence } from '../lib/complex-work/evidence.ts';
-import { harness, plan, task, brief, writer, review, until, assignment, readWork, writeWork, checkWork, reviewWork, integrateWork } from './complex-work-fixtures.mjs';
+import { spawnSubagent } from '../lib/complex-work/rpc.ts';
 
-async function approve(h, value = plan()) {
-  await h.engine.submitScope(brief, value);
-  await h.engine.userAction('go', String(h.state.revision));
-}
-async function candidate(h) {
-  await approve(h);
-  await h.engine.submitWork([writeWork('change'), checkWork('tests', 'change', 'a'), reviewWork('inspection', 'change', 'a')]);
-  await h.complete('change', writer);
-  await h.complete('inspection', review);
-  await until(() => h.state.work.tests.status === 'completed');
-}
-async function integrated(h) {
-  await candidate(h);
-  await h.engine.submitWork([integrateWork('merge', 'change', ['tests'], ['inspection'])]);
-  await until(() => h.state.work.merge.status === 'completed');
+const hooks = registerHooks({ load(url, context, next) {
+  if (url.endsWith('.ts') && url.includes('/node_modules/')) {
+    return { format: 'module', source: stripTypeScriptTypes(readFileSync(new URL(url), 'utf8'), { mode: 'transform' }), shortCircuit: true };
+  }
+  return next(url, context);
+} });
+const [rpc, notify, agents, capabilities, { default: readOnlyMode }] = await Promise.all([
+  import('../node_modules/pi-subagents/src/extension/rpc.ts'),
+  import('../node_modules/pi-subagents/src/runs/background/notify.ts'),
+  import('../node_modules/pi-subagents/src/agents/agents.ts'),
+  import('pi-subagents/capability-ceiling'),
+  import('../lib/complex-work/read-only.ts'),
+]);
+hooks.deregister();
+
+function eventBus() {
+  const bus = new EventEmitter();
+  return {
+    bus,
+    on(name, handler) { bus.on(name, handler); return () => bus.off(name, handler); },
+    emit(name, value) { bus.emit(name, value); },
+  };
 }
 
-test('startup and completion never invent an agent or next stage', async t => {
-  const h = await harness(t);
-  await h.engine.start();
-  assert.equal(h.launches.length, 0);
-  await h.engine.submitWork([readWork('globe')]);
-  await h.complete('globe');
-  assert.equal(h.state.work.globe.status, 'completed');
+function harness(t, execute) {
+  const events = eventBus();
+  const commands = new Map();
+  const messages = [], notices = [], launches = [];
+  const pi = {
+    events,
+    registerCommand: (name, command) => commands.set(name, command),
+    sendMessage: (message, options) => messages.push({ ...message, options }),
+    getThinkingLevel: () => 'high',
+  };
+  const ctx = {
+    cwd: '/shared/project with spaces',
+    model: { provider: 'openai-codex', id: 'gpt-5.6-terra' },
+    sessionManager: { getSessionFile: () => '/sessions/current.jsonl', getSessionId: () => 'parent-session' },
+    waitForIdle: async () => {},
+    ui: { notify: (message, level) => notices.push({ message, level }) },
+  };
+  const bridge = rpc.registerSubagentRpcBridge({
+    events, getContext: () => ctx,
+    execute: async (_id, params) => {
+      launches.push(params);
+      assert.ok(messages[0].content.includes('Main agent:'), 'handoff guidance precedes the fork');
+      return execute ? execute(params) : { content: [{ type: 'text', text: 'Started' }], details: { runId: `run-${launches.length}` } };
+    },
+  });
+  const notifier = notify.default(pi, { currentSessionId: 'parent-session', completionOwnerId: 'owner' }, { batchConfig: { enabled: false } });
+  t.after(() => { bridge.dispose(); notifier.dispose(); });
+  extension(pi);
+  return { pi, ctx, events, commands, messages, notices, launches, notifier, run: (command, args = '') => commands.get(command).handler(args, ctx) };
+}
+
+test('research command launches one fork with current model, effort, and shared cwd', async t => {
+  const h = harness(t);
+  assert.deepEqual([...h.commands.keys()], ['complex-work', 'complex-work-plan']);
+  await h.run('complex-work', '  Investigate the cache  ');
   assert.equal(h.launches.length, 1);
-  assert.equal(Object.keys(h.state.work).length, 1);
-  assert.equal(h.state.status, 'active');
+  const launch = h.launches[0];
+  assert.equal(launch.agent, 'research-unit');
+  assert.equal(launch.context, 'fork');
+  assert.equal(launch.model, 'openai-codex/gpt-5.6-terra:high');
+  assert.equal(launch.cwd, h.ctx.cwd);
+  assert.equal(launch.worktree, false);
+  assert.equal(launch.async, true);
+  assert.equal(launch.output, false);
+  assert.match(launch.task, /Investigate the cache/);
+  assert.match(launch.task, /may delegate read-only subtasks/);
+  assert.match(h.messages[0].content, /Wait for the user to request planning/);
+  assert.equal(h.messages[0].display, false, 'internal handoff instructions stay out of the chat UI');
+  assert.equal(h.messages[0].options.triggerTurn, false);
+  assert.match(h.notices.at(-1).message, /run-1/);
 });
-test('model-defined dependencies allow arbitrary read work before and after a change', async t => {
-  const h = await harness(t);
-  await approve(h);
-  await h.engine.submitWork([readWork('first'), writeWork('edit', 'a', { dependsOn: ['first'] }), readWork('measure', ['edit']), readWork('followup', ['measure'])]);
-  await h.complete('first');
-  await h.complete('edit', writer);
-  await h.complete('measure');
-  await h.complete('followup');
-  assert.deepEqual(h.launches.map(item => item.agent), ['Assigned first', 'Assigned edit', 'Assigned measure', 'Assigned followup']);
-  assert.equal(h.state.integrations.a, undefined);
+
+test('planning can start directly without arguments and waits for acceptance', async t => {
+  const h = harness(t);
+  await h.run('complex-work-plan');
+  assert.equal(h.launches[0].agent, 'plan-unit');
+  assert.equal(h.launches[0].context, 'fork');
+  assert.match(h.launches[0].task, /current conversation, including prior research and user feedback/);
+  assert.match(h.messages[0].content, /wait for their explicit acceptance/);
+  assert.match(h.messages[0].content, /After acceptance, the main agent implements/);
+  assert.match(h.messages[0].content, /finished work for user acceptance or correction/);
 });
-test('protected work waits for current scope approval and cannot self-approve', async t => {
-  const h = await harness(t);
-  await assert.rejects(h.engine.submitWork([writeWork('bad')]), /scope/);
-  await h.engine.submitScope(brief, plan());
-  await h.engine.submitWork([writeWork('edit')]);
-  assert.equal(h.state.work.edit.status, 'pending');
+
+test('native completion returns research and plan results without launching another stage', async t => {
+  const h = harness(t);
+  for (const [command, summary] of [['complex-work', 'Research: the cache is stale.'], ['complex-work-plan', 'Plan: replace cache invalidation and verify it.']]) {
+    await h.run(command);
+    const count = h.launches.length;
+    const result = { sessionId: 'parent-session', completionOwnerId: 'owner', runId: `run-${count}`, agent: h.launches.at(-1).agent, success: true, summary, triggerTurn: true };
+    assert.equal(await h.notifier.deliver(result), true);
+    const notice = h.messages.at(-1);
+    assert.equal(notice.customType, 'subagent-notify');
+    assert.match(notice.content, new RegExp(summary.replaceAll('.', '\\.')));
+    assert.equal(notice.options.triggerTurn, true);
+    assert.equal(h.launches.length, count);
+    const before = h.messages.length;
+    await h.notifier.deliver(result);
+    assert.equal(h.messages.length, before, 'runtime deduplicates completion delivery');
+  }
+  assert.match(h.messages.find(message => message.content.startsWith('User requested /complex-work-plan')).content, /wait for their explicit acceptance/);
+});
+
+test('commands wait for a stable conversation before launching', async t => {
+  const h = harness(t);
+  let idle;
+  h.ctx.waitForIdle = () => new Promise(resolve => { idle = resolve; });
+  const pending = h.run('complex-work');
   assert.equal(h.launches.length, 0);
-  await assert.rejects(h.engine.userAction('go', '0'), /current/);
-  await h.engine.userAction('go', '1');
-  await until(() => h.launches.length === 1);
-  assert.ok(h.saves.some(s => s.work.edit?.status === 'running' && s.work.edit.snapshot));
+  assert.equal(h.messages.length, 0);
+  idle();
+  await pending;
+  assert.equal(h.launches.length, 1);
 });
-test('failed work retains evidence and blocks dependents without automatic retries', async t => {
-  const h = await harness(t);
-  await approve(h);
-  await h.engine.submitWork([writeWork('edit'), readWork('dependent', ['edit']), readWork('independent')]);
-  await h.complete('edit', { ...writer, status: 'blocked', blockers: [{ kind: 'implementation', message: 'Needs correction' }] });
-  await h.complete('independent');
-  assert.equal(h.state.work.edit.status, 'failed');
-  assert.ok(h.state.work.edit.result.snapshot);
-  assert.equal(h.state.work.dependent.status, 'pending');
-  assert.equal(h.launches.length, 2);
-  await h.engine.submitWork([writeWork('correction', 'a', { input: 'edit', dependsOn: ['edit'], allowFailed: ['edit'] })]);
-  await h.complete('correction', writer);
-  assert.equal(h.state.work.correction.status, 'completed');
-  assert.equal(h.state.work.edit.status, 'failed');
+
+test('research and planning can be repeated with feedback without a mission state', async t => {
+  const h = harness(t);
+  await h.run('complex-work');
+  await h.run('complex-work-plan', 'Prefer the smaller change');
+  await h.run('complex-work-plan', 'Revise the plan to keep compatibility');
+  assert.equal(h.launches.length, 3);
+  assert.match(h.launches[2].task, /Revise the plan to keep compatibility/);
 });
-test('pause drains active work and resume respects the submitted graph', async t => {
-  const h = await harness(t);
-  await h.engine.submitWork([readWork('one'), readWork('two', ['one'])]);
-  await until(() => h.launches.length === 1);
-  await h.engine.userAction('pause');
-  await h.complete('one');
-  assert.equal(h.state.work.two.status, 'pending');
-  await h.engine.userAction('resume');
-  await h.complete('two');
+
+test('a session that cannot be forked does not launch a fresh fallback', async t => {
+  const h = harness(t);
+  h.ctx.sessionManager.getSessionFile = () => undefined;
+  await h.run('complex-work');
+  assert.equal(h.launches.length, 0);
+  assert.equal(h.messages.length, 0);
+  assert.match(h.notices[0].message, /persisted conversation/);
 });
-test('work admission is atomic and names cannot overwrite previous results', async t => {
-  const h = await harness(t);
-  await assert.rejects(h.engine.submitWork([readWork('one'), readWork('two', ['missing'])]), /unknown dependency/);
-  assert.equal(Object.keys(h.state.work).length, 0);
-  await h.engine.submitWork([readWork('one')]); await h.complete('one');
-  await assert.rejects(h.engine.submitWork([readWork('one')]), /Duplicate/);
-  assert.equal(h.state.work.one.status, 'completed');
+
+test('runtime launch failures are reported and never retried', async t => {
+  const h = harness(t, async () => ({ isError: true, content: [{ type: 'text', text: 'Explicit fork requires a session leaf' }], details: {} }));
+  await h.run('complex-work-plan');
+  assert.equal(h.launches.length, 1);
+  assert.equal(h.notices.at(-1).level, 'error');
+  assert.match(h.messages.at(-1).content, /Explicit fork requires a session leaf/);
+  assert.equal(h.messages.at(-1).options.triggerTurn, false);
 });
-test('concurrency and launch budgets limit model-submitted work', async t => {
-  const h = await harness(t);
-  await h.engine.userAction('policy', '{"maxAgents":1,"maxLaunches":2}');
-  await h.engine.submitWork([readWork('one'), readWork('two'), readWork('three')]);
-  await until(() => h.launches.length === 1);
-  await h.complete('one'); await h.complete('two');
-  await until(() => h.state.paused);
-  assert.equal(h.state.work.three.status, 'pending');
-  assert.equal(h.launches.length, 2);
+
+test('acknowledgement timeout leaves no listeners or duplicate launches', async () => {
+  const events = eventBus();
+  const requests = [];
+  events.on('subagents:rpc:v1:request', request => requests.push(request));
+  await assert.rejects(spawnSubagent({ events }, { agent: 'research-unit' }, 5), /may already be running/);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(events.bus.eventNames(), ['subagents:rpc:v1:request']);
+  events.emit(`subagents:rpc:v1:reply:${requests[0].requestId}`, { success: true, data: { details: { runId: 'late' } } });
+  assert.equal(requests.length, 1);
 });
-test('duplicate completion cannot overwrite a retained result or trigger additional work', async t => {
-  const h = await harness(t);
-  await h.engine.submitWork([readWork('one')]); await h.complete('one', 'Original');
-  await h.engine.onCompletion({ runId: h.state.work.one.runId, success: true, state: 'complete', output: 'Duplicate' });
-  assert.equal(h.state.work.one.result.output, 'Original'); assert.equal(h.launches.length, 1);
+
+test('concurrent launch acknowledgements stay correlated', async () => {
+  const events = eventBus();
+  const requests = [];
+  events.on('subagents:rpc:v1:request', request => requests.push(request));
+  const research = spawnSubagent({ events }, { agent: 'research-unit' });
+  const plan = spawnSubagent({ events }, { agent: 'plan-unit' });
+  for (const request of [...requests].reverse()) events.emit(`subagents:rpc:v1:reply:${request.requestId}`, { success: true, data: { details: { runId: request.params.agent } } });
+  assert.equal((await research).details.runId, 'research-unit');
+  assert.equal((await plan).details.runId, 'plan-unit');
+  assert.deepEqual(events.bus.eventNames(), ['subagents:rpc:v1:request']);
 });
-test('uncertain launches retain their slots and are not relaunched on recovery', async t => {
-  let spawns = 0;
-  const h = await harness(t, {}, { rpc: async method => {
-    if (method === 'spawn') { spawns++; throw new RpcError('timeout', true); }
-    return {};
-  } });
-  await h.engine.submitWork([readWork('one')]);
-  await until(() => h.state.work.one.status === 'uncertain');
-  await h.engine.reconcile(); await h.engine.transaction(() => {});
-  assert.equal(spawns, 1);
-  await assert.rejects(h.engine.userAction('resume'), /uncertain/);
-});
-test('lost completion is recovered from runtime status and a correlated receipt', async t => {
-  const h = await harness(t, {}, { rpc: async method => method === 'spawn' ? { details: { runId: 'recovered' } }
-    : { asyncSnapshot: { runs: [{ id: 'recovered', state: 'complete' }] } } });
-  await h.engine.submitWork([readWork('one')]);
-  await until(() => h.state.work.one.runId);
-  const job = h.state.work.one;
-  await atomicJson(job.receipt, { operationId: job.operationId, runId: 'recovered', role: 'read-only', state: 'answered', output: 'Recovered' });
-  await h.engine.reconcile();
-  assert.equal(job.status, 'completed'); assert.equal(job.result.output, 'Recovered');
-});
-test('cancel during spawn acknowledgement stops the late run and preserves terminal status', async t => {
-  let acknowledge; const stopped = [];
-  const h = await harness(t, {}, { rpc: async (method, params) => {
-    if (method === 'spawn') return new Promise(resolve => { acknowledge = resolve; });
-    if (method === 'stop') stopped.push(params.id);
-    return {};
-  } });
-  await h.engine.submitWork([readWork('one')]); await until(() => acknowledge);
-  await h.engine.cancel();
-  acknowledge({ details: { runId: 'late' } }); await until(() => stopped.includes('late'));
-  await h.engine.onCompletion({ runId: 'late', success: true, state: 'complete', output: 'Late result' });
-  assert.equal(h.state.status, 'cancelled'); assert.equal(h.state.work.one.status, 'cancelled');
-});
-test('integration is explicitly submitted and requires both exact check and review evidence', async t => {
-  const h = await harness(t);
-  await candidate(h);
-  assert.equal(h.state.integrations.a, undefined);
-  await h.engine.submitWork([integrateWork('merge', 'change', ['tests'], ['inspection'])]);
-  await until(() => h.state.work.merge.status === 'completed');
-  assert.equal(h.state.integrations.a.workId, 'merge');
-  assert.equal(Object.keys(h.state.work).length, 4);
-  assert.equal(h.state.delivery, undefined);
-});
-test('a check or review for an earlier candidate cannot authorize a correction', async t => {
-  const h = await harness(t);
-  await candidate(h);
-  await h.engine.submitWork([writeWork('correction', 'a', { dependsOn: ['change'], input: 'change' })]);
-  await h.complete('correction', writer);
-  await h.engine.submitWork([integrateWork('bad-merge', 'correction', ['tests'], ['inspection'])]);
-  await until(() => h.state.work['bad-merge'].status === 'failed');
-  assert.match(h.state.work['bad-merge'].error, /Stale/);
-  assert.equal(h.state.integrations.a, undefined);
-});
-test('a favorable review cannot hide a blocker on the same candidate', async t => {
-  const h = await harness(t);
-  await candidate(h);
-  await h.engine.submitWork([reviewWork('second-opinion', 'change', 'a')]);
-  await h.complete('second-opinion', { ...review, verdict: 'fix', findings: [{ id: 'bug', severity: 'P1', evidence: 'src/a.ts', correction: 'Fix' }] });
-  assert.throws(() => assertEvidence(h.state, h.state.work.change.result.snapshot, { checks: ['tests'], reviews: ['inspection'] }), /unresolved/);
-});
-test('delivery requires model-selected final evidence and separate user approval', async t => {
-  const h = await harness(t);
-  await integrated(h);
-  await assert.rejects(h.engine.requestDelivery({ checks: ['tests'], reviews: ['inspection'] }), /Stale/);
-  await h.engine.submitWork([checkWork('final-check'), reviewWork('final-review', 'final-check')]);
-  await h.complete('final-review', review);
-  await h.engine.requestDelivery({ checks: ['final-check'], reviews: ['final-review'] });
-  assert.equal(h.state.status, 'active');
-  assert.equal(h.state.delivery.status, 'requested');
-  await assert.rejects(h.engine.submitWork([readWork('too-late')]), /Delivery/);
-  await assert.rejects(h.engine.userAction('verify', '0'), /current/);
-  await h.engine.userAction('verify', '1');
-  assert.equal(h.state.status, 'completed');
-});
-test('changing scope invalidates approval and pending work but preserves previous results', async t => {
-  const h = await harness(t);
-  await approve(h);
-  await h.engine.submitWork([readWork('evidence')]); await h.complete('evidence');
-  await h.engine.userAction('pause');
-  await h.engine.submitWork([writeWork('old-write')]);
-  await h.engine.cancelWork(['old-write']);
-  await h.engine.submitScope(brief, plan());
-  assert.equal(h.state.revision, 2); assert.equal(h.state.approval, undefined);
-  assert.equal(h.state.paused, true);
-  assert.equal(h.state.work.evidence.result.output, 'Evidence');
-});
-test('work definitions and results survive persistence without synthesizing more work', async t => {
-  const h = await harness(t);
-  await h.engine.submitWork([readWork('one')]); await h.complete('one');
-  const pointer = await saveMission(h.state);
-  const restored = await loadMission(pointer, '/session');
-  assert.equal(restored.work.one.assignment.name, 'Assigned one');
-  assert.equal(restored.work.one.result.output, 'Evidence');
-  assert.deepEqual(Object.keys(restored.work), ['one']);
-});
-test('legacy state is preserved and paused instead of translated into a work graph', async t => {
-  const h = await harness(t);
-  const old = { ...h.state, version: 2, phase: 'researching', jobs: {}, reports: { architecture: 'Old evidence' } };
-  await atomicJson(h.state.stateFile, old);
-  const restored = await loadMission({ version: 2, id: old.id, stateFile: old.stateFile, rootSessionFile: '/session' }, '/session');
-  assert.equal(restored.paused, true); assert.deepEqual(restored.work, {});
-  assert.equal(restored.legacy.data.reports.architecture, 'Old evidence');
-});
-test('one answer cannot clear multiple user decisions', async t => {
-  const h = await harness(t);
-  await h.engine.askDecision(['First?', 'Second?']);
-  await assert.rejects(h.engine.userAction('decide', '["yes"]'), /one answer/);
-  assert.equal(h.state.decisions.length, 2);
-  await assert.rejects(h.engine.submitScope(brief, plan()), /pending user decisions/);
-  await h.engine.askDecision(['Third?']);
-  assert.deepEqual(h.state.decisions, ['First?', 'Second?', 'Third?']);
-});
-test('completed delivery is not replayed by periodic reconciliation', async t => {
-  let deliveries = 0;
-  const h = await harness(t, {}, { deliver: async () => { deliveries++; } });
-  await integrated(h);
-  await h.engine.submitWork([checkWork('final-check'), reviewWork('final-review', 'final-check')]);
-  await h.complete('final-review', review);
-  await h.engine.requestDelivery({ checks: ['final-check'], reviews: ['final-review'] });
-  await h.engine.userAction('verify', '1');
-  await h.engine.reconcile();
-  assert.equal(h.state.delivery.status, 'completed'); assert.equal(deliveries, 1);
-});
-test('an explicitly acknowledged passing check can supersede a transient failure', async t => {
-  const h = await harness(t, {}, { local: async (_state, job) => ({ snapshot: job.snapshot, checks: [{ ...{ check: plan().tasks[0].checks[0] }, code: job.id === 'flaky' ? 7 : 0 }] }) });
-  await approve(h);
-  await h.engine.submitWork([writeWork('change'), checkWork('flaky', 'change', 'a'), reviewWork('inspection', 'change', 'a')]);
-  await h.complete('change', writer); await h.complete('inspection', review);
-  await until(() => h.state.work.flaky.status === 'failed');
-  await h.engine.submitWork([{ ...checkWork('retry-check', 'flaky', 'a'), allowFailed: ['flaky'] }]);
-  await until(() => h.state.work['retry-check'].status === 'completed');
-  assert.doesNotThrow(() => assertEvidence(h.state, h.state.work.change.result.snapshot, { checks: ['retry-check'], reviews: ['inspection'] }));
-});
-test('independent review coverage may be split between model-defined assignments', async t => {
-  const graph = plan(); graph.acceptanceCriteria.push({ id: 'visual', description: 'The UI is readable' }); graph.tasks[0].criteria.push('visual');
-  const h = await harness(t); await approve(h, graph);
-  await h.engine.submitWork([writeWork('change'), checkWork('checks', 'change', 'a'), reviewWork('behavior', 'change', 'a'), reviewWork('visuals', 'change', 'a')]);
-  await h.complete('change', { ...writer, criteria: ['works', 'visual'] });
-  await h.complete('behavior', review); await h.complete('visuals', { ...review, coveredCriteria: ['visual'] });
-  await until(() => h.state.work.checks.status === 'completed');
-  const snapshot = h.state.work.change.result.snapshot;
-  assert.throws(() => assertEvidence(h.state, snapshot, { checks: ['checks'], reviews: ['behavior'] }), /cover every/);
-  assert.doesNotThrow(() => assertEvidence(h.state, snapshot, { checks: ['checks'], reviews: ['behavior', 'visuals'] }));
-});
-test('model tool surface distinguishes authority proposals, work and evidence', () => {
-  const tools = []; const handlers = new Map(); const commands = new Map();
-  extension({ registerTool: tool => tools.push(tool), on: (event, fn) => handlers.set(event, fn), events: { on() {} }, registerCommand: (name, value) => commands.set(name, value) });
-  assert.deepEqual(tools.map(tool => tool.name), ['complex_work_control', 'complex_work_submit', 'complex_work_scope', 'complex_work_cancel_work', 'complex_work_delivery', 'complex_work_decision', 'complex_work_withdraw_delivery']);
-  assert.match(tools[0].promptGuidelines[0], /recurring checklist, not a sequence/);
-  assert.match(tools[0].promptGuidelines[0], /skip, repeat, parallelize, or revisit/);
-  assert.ok(commands.has('complex-work-go')); assert.ok(commands.has('complex-work-verify'));
-  handlers.get('session_shutdown')();
-});
-test('runtime registration uses model instructions with bounded capabilities', async () => {
-  const hooks = registerHooks({ load(url, context, next) {
-    if (url.endsWith('.ts') && url.includes('/node_modules/')) return { format: 'module', source: stripTypeScriptTypes(readFileSync(new URL(url), 'utf8'), { mode: 'transform' }), shortCircuit: true };
-    return next(url, context);
-  } });
-  let registerAgent;
-  try { ({ registerAgent } = await import('pi-subagents/agents')); } finally { hooks.deregister(); }
-  const { registerAssignment } = await import('../lib/complex-work/roles.ts');
-  const definitions = [];
-  const pi = { on() {}, registerTool() {}, events: { emit(_event, request) {
-    definitions.push(request.definition);
-    try { request.result = { ok: true, registration: registerAgent({ pi, name: request.name, definition: request.definition }) }; }
-    catch (error) { request.result = { ok: false, error }; }
-  } } };
-  const registrations = [registerAssignment(pi, 'one', assignment('globe', 'Inspect transparency'), false), registerAssignment(pi, 'two', assignment('ui', 'Implement neon UI'), true)];
+
+test('read-only mode permits research and delegation, and propagates to descendants only', () => {
+  const handlers = new Map();
+  readOnlyMode({ on: (event, handler) => handlers.set(event, handler) });
+  const start = sessionId => handlers.get('session_start')({}, { sessionManager: { getSessionId: () => sessionId } });
+  start('planning-child');
   try {
-    assert.equal(definitions[0].systemPrompt, 'Inspect transparency');
-    assert.equal(definitions[0].tools.includes('write'), false);
-    assert.equal(definitions[1].systemPrompt, 'Implement neon UI');
-    assert.equal(definitions[1].tools.includes('write'), true);
-    for (const definition of definitions) {
-      assert.equal(definition.tools.includes('bash'), false); assert.equal(definition.tools.includes('subagent'), false);
-      assert.equal(definition.subagentOnlyExtensions.length, 1);
+    const ceiling = capabilities.resolveSubagentCapabilityCeiling('planning-child');
+    assert.ok(ceiling.allowedTools.includes('subagent'));
+    assert.ok(ceiling.allowedTools.includes('web_search'));
+    assert.equal(capabilities.resolveSubagentCapabilityCeiling('parent-session'), undefined);
+    const inherited = capabilities.decodeSubagentCapabilityCeiling(capabilities.encodeSubagentCapabilityCeiling(ceiling));
+    const descendant = capabilities.resolveSubagentCapabilityCeiling('grandchild', inherited);
+    for (const toolName of ['read', 'grep', 'find', 'ls', 'web_search', 'fetch_content', 'get_search_content', 'subagent']) {
+      assert.equal(handlers.get('tool_call')({ toolName }), undefined);
+      assert.ok(descendant.allowedTools.includes(toolName));
     }
-  } finally { for (const registration of registrations) registration.dispose(); }
+    for (const toolName of ['write', 'edit', 'bash', 'unknown_mutation_tool']) {
+      assert.equal(handlers.get('tool_call')({ toolName }).block, true);
+      assert.equal(descendant.allowedTools.includes(toolName), false);
+    }
+    start('replacement-child');
+    assert.equal(capabilities.resolveSubagentCapabilityCeiling('planning-child'), undefined);
+  } finally { handlers.get('session_shutdown')(); }
+  assert.equal(capabilities.resolveSubagentCapabilityCeiling('replacement-child'), undefined);
+});
+
+test('installed agent discovery resolves delegating profiles and child-only plan mode', t => {
+  const cwd = mkdtempSync(path.join(tmpdir(), 'complex-work-agents-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const agentRoot = fileURLToPath(new URL('../', import.meta.url));
+  mkdirSync(path.join(cwd, '.pi/lib/complex-work'), { recursive: true });
+  cpSync(path.join(agentRoot, 'agents'), path.join(cwd, '.pi/agents'), { recursive: true });
+  cpSync(path.join(agentRoot, 'lib/complex-work/read-only.ts'), path.join(cwd, '.pi/lib/complex-work/read-only.ts'));
+  const settings = JSON.parse(readFileSync(path.join(agentRoot, 'settings.json'), 'utf8'));
+  writeFileSync(path.join(cwd, '.pi/settings.json'), JSON.stringify({ subagents: settings.subagents }));
+  const discovered = agents.discoverAgents(cwd, 'project');
+  assert.deepEqual(discovered.agentDiagnostics, []);
+  assert.equal(settings.subagents.worktree, false);
+  assert.ok(settings.subagents.maxSubagentDepth >= 3, 'work units can delegate below the main agent');
+  for (const name of ['research-unit', 'plan-unit', 'work-unit']) {
+    const agent = discovered.agents.find(item => item.name === name);
+    assert.ok(agent, `${name} is discoverable`);
+    assert.ok(agent.tools.includes('subagent'));
+    assert.equal(agent.allowNestedSubagents, true);
+    assert.equal(agent.defaultContext, 'fork');
+    assert.match(agent.systemPrompt, /do not create worktrees/);
+    if (name === 'work-unit') {
+      assert.ok(agent.tools.includes('write'));
+      assert.equal(agent.subagentOnlyExtensions, undefined);
+    } else {
+      assert.equal(agent.acceptanceRole, 'read-only');
+      assert.equal(agent.tools.includes('write'), false);
+      assert.equal(agent.subagentOnlyExtensions.length, 1);
+      assert.ok(existsSync(agent.subagentOnlyExtensions[0]));
+    }
+  }
 });
