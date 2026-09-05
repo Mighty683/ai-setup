@@ -17,7 +17,7 @@ const STATE_ENTRY = "complex-work-state";
 const controlParams = Type.Object({
   action: Type.String({
     description:
-      "One of: status, plan, plan-complete, go, complete, finish, abandon",
+      "One of: status, plan, plan-failed, retry-plan, plan-complete, go, complete, replan, finish, abandon",
   }),
   missionId: Type.Optional(
     Type.String({
@@ -45,12 +45,15 @@ type WorkflowAction = keyof typeof workflowPaths;
 type Phase =
   | "ready-to-plan"
   | "planning"
+  | "planning-failed"
   | "awaiting-go"
   | "executing"
   | "integrating"
   | "reviewing"
   | "verifying"
-  | "closing";
+  | "closing"
+  | "awaiting-review-decision"
+  | "inactive";
 
 const completionStatuses: Partial<Record<Phase, string>> = {
   executing: "integration-required",
@@ -99,7 +102,18 @@ function describeState(state: ComplexWorkState): string {
     return `Plan recorded. Await explicit user GO before execution.${mission}`;
   }
   if (state.phase === "planning") {
-    return `Planning workflow is running or its result needs recording.${mission}`;
+    return state.expectedAction
+      ? `Planning workflow is authorized and awaiting launch.${mission}`
+      : `Planning workflow is running or its result needs recording.${mission}`;
+  }
+  if (state.phase === "planning-failed") {
+    return `Planning failure recorded. Call ${CONTROL_TOOL} with action "retry-plan" to authorize a retry.${mission}`;
+  }
+  if (state.phase === "awaiting-review-decision") {
+    return `Review found blocking or unresolved findings. Present them to the user and wait. The user may choose replan or abandon.${mission}`;
+  }
+  if (state.phase === "inactive") {
+    return "No active complex-work session.";
   }
   const next = actionForPhase(state.phase);
   return next
@@ -130,14 +144,16 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
 
   const launchInstructions = (action: WorkflowAction): string => {
     const missionArgument =
-      action === "plan"
+      action === "plan" && !state?.missionId
         ? "Start this as a mission-backed asynchronous workflow from the target repository; do not set mission: false."
         : `Attach it to missionId ${state?.missionId ?? "<mission-id>"} and launch asynchronously from the target repository.`;
     const expectedStatus = completionStatuses[state?.phase ?? "ready-to-plan"];
     const next =
       action === "plan"
-        ? 'When the plan result is available, call complex_work_control with action "plan-complete" and its missionId.'
-        : `Only after the workflow succeeds with status ${expectedStatus}, call complex_work_control with action "complete" and resultStatus "${expectedStatus}". On failure, report the blocker and leave this phase unchanged.`;
+        ? 'When planning succeeds, call complex_work_control with action "plan-complete" and its missionId. If the workflow fails, call action "plan-failed" with resultStatus "planning-failed" before requesting retry-plan.'
+        : action === "review"
+          ? 'After the workflow succeeds, call complex_work_control with action "complete" and its exact resultStatus: either "review-passed" or "review-decision-required".'
+          : `Only after the workflow succeeds with status ${expectedStatus}, call complex_work_control with action "complete" and resultStatus "${expectedStatus}". On failure, report the blocker and leave this phase unchanged.`;
     return [
       `Authorized workflow: ${action}.`,
       `Call subagent with workflowScriptPath: ${workflowPaths[action]}.`,
@@ -172,7 +188,8 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         };
       }
       if (action === "abandon" || action === "finish") {
-        state = undefined;
+        state = { ...state, phase: "inactive", expectedAction: undefined, updatedAt: now() };
+        persist();
         disableControl();
         const message =
           action === "finish"
@@ -183,10 +200,37 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
           details: { state: null },
         };
       }
+      if (action === "plan-failed") {
+        if (
+          state.phase !== "planning" ||
+          state.expectedAction ||
+          params.resultStatus !== "planning-failed"
+        ) {
+          throw new Error(
+            "plan-failed requires a launched planning workflow that returned resultStatus planning-failed.",
+          );
+        }
+        state = {
+          ...state,
+          phase: "planning-failed",
+          expectedAction: undefined,
+          updatedAt: now(),
+        };
+        persist();
+        return {
+          content: [{ type: "text", text: describeState(state) }],
+          details: { state: state ?? null },
+        };
+      }
       if (action === "plan-complete") {
         if (state.phase !== "planning" || !params.missionId?.trim()) {
           throw new Error(
             "plan-complete requires a successful planning launch and its missionId.",
+          );
+        }
+        if (state.missionId && params.missionId.trim() !== state.missionId) {
+          throw new Error(
+            `Replanning must remain attached to mission ${state.missionId}.`,
           );
         }
         state = {
@@ -223,22 +267,57 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
           details: { state: state ?? null },
         };
       }
-      if (action === "complete") {
-        const nextPhase: Partial<Record<Phase, Phase>> = {
-          executing: "integrating",
-          integrating: "reviewing",
-          reviewing: "verifying",
-          verifying: "closing",
-          closing: "awaiting-go",
-        };
-        const next = nextPhase[state.phase];
-        if (!next)
-          throw new Error(`complete is not valid during ${state.phase}.`);
-        const expectedStatus = completionStatuses[state.phase];
-        if (!expectedStatus || params.resultStatus !== expectedStatus) {
+      if (action === "replan" || action === "retry-plan") {
+        const isReviewReplan =
+          action === "replan" && state.phase === "awaiting-review-decision";
+        const isPlanningRetry =
+          action === "retry-plan" && state.phase === "planning-failed";
+        if (!isReviewReplan && !isPlanningRetry) {
           throw new Error(
-            `Refusing to advance ${state.phase}: complete requires resultStatus ${expectedStatus ?? "<none>"} from a successful workflow result.`,
+            action === "replan"
+              ? "Replan is only valid after review requires a user decision."
+              : "retry-plan is only valid after plan-failed records an authorized planning workflow failure.",
           );
+        }
+        state = {
+          ...state,
+          phase: "planning",
+          expectedAction: "plan",
+          updatedAt: now(),
+        };
+        persist();
+        return {
+          content: [{ type: "text", text: launchInstructions("plan") }],
+          details: { state: state ?? null },
+        };
+      }
+      if (action === "complete") {
+        let next: Phase | undefined;
+        let expectedStatus = completionStatuses[state.phase];
+        if (state.phase === "reviewing") {
+          if (params.resultStatus === "review-passed") next = "verifying";
+          else if (params.resultStatus === "review-decision-required") {
+            next = "awaiting-review-decision";
+          } else {
+            throw new Error(
+              "Refusing to advance reviewing: resultStatus must be review-passed or review-decision-required.",
+            );
+          }
+        } else {
+          const nextPhase: Partial<Record<Phase, Phase>> = {
+            executing: "integrating",
+            integrating: "reviewing",
+            verifying: "closing",
+            closing: "awaiting-go",
+          };
+          next = nextPhase[state.phase];
+          if (!next)
+            throw new Error(`complete is not valid during ${state.phase}.`);
+          if (!expectedStatus || params.resultStatus !== expectedStatus) {
+            throw new Error(
+              `Refusing to advance ${state.phase}: complete requires resultStatus ${expectedStatus ?? "<none>"} from a successful workflow result.`,
+            );
+          }
         }
         state = {
           ...state,
@@ -290,13 +369,16 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       state?.rootSessionFile &&
         state.rootSessionFile === ctx.sessionManager.getSessionFile(),
     );
-    if (state && isRootSession) enableControl();
+    if (state && state.phase !== "inactive" && isRootSession) enableControl();
     else disableControl();
   });
 
   pi.on("tool_call", (event) => {
     if (!state || !isRootSession || event.toolName !== "subagent") return;
-    const input = event.input as { workflowScriptPath?: unknown };
+    const input = event.input as {
+      workflowScriptPath?: unknown;
+      missionId?: unknown;
+    };
     const workflowScriptPath = String(input.workflowScriptPath ?? "");
     if (!workflowScriptPath) return;
     const expected = state.expectedAction;
@@ -312,6 +394,12 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         reason: `Only ${workflowPaths[expected]} is authorized during the ${state.phase} phase.`,
       };
     }
+    if (state.missionId && String(input.missionId ?? "") !== state.missionId) {
+      return {
+        block: true,
+        reason: `This workflow must remain attached to mission ${state.missionId}.`,
+      };
+    }
     state = { ...state, expectedAction: undefined, updatedAt: now() };
     persist();
   });
@@ -322,6 +410,13 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       const request = args.trim();
       if (!request) {
         ctx.ui.notify("Usage: /complex-work <request>", "warning");
+        return Promise.resolve();
+      }
+      if (state && state.phase !== "inactive") {
+        ctx.ui.notify(
+          `A complex-work session is already ${state.phase}. Finish or abandon it before starting another.`,
+          "error",
+        );
         return Promise.resolve();
       }
       const rootSessionFile = ctx.sessionManager.getSessionFile();

@@ -3,8 +3,8 @@ if (!workflowState || !workflowState.pendingReview || !workflowState.pendingRevi
   throw new Error("A reviewed complex-work wave is required before it can be closed.");
 }
 
-if (workflowState.pendingReview.reviewFindings.some((finding) => !finding.ok)) {
-  throw new Error("All review lanes must complete successfully before the wave can be closed.");
+if (workflowState.pendingReview.reviewVerdict !== "passed") {
+  throw new Error("Review must pass without blocking findings before the wave can be closed.");
 }
 
 const closedWave = workflowState.pendingReview.wave.id;

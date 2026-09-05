@@ -21,6 +21,21 @@ if (nextWave.parallel && nextWave.lanes.length > 1 && nextWave.lanes.some((lane)
   throw new Error("Parallel writer lanes require Pi-managed worktrees.");
 }
 
+const laneOutputSchema = {
+  type: "object",
+  properties: {
+    status: { type: "string", enum: ["accepted", "blocked"] },
+    summary: { type: "string" },
+    taskRecord: { type: "string" },
+    changedFiles: { type: "array", items: { type: "string" } },
+    checks: { type: "array", items: { type: "string" } },
+    blockers: { type: "array", items: { type: "string" } },
+    nestedWriterComplete: { type: "boolean" }
+  },
+  required: ["status", "summary", "taskRecord", "changedFiles", "checks", "blockers", "nestedWriterComplete"],
+  additionalProperties: false
+};
+
 function laneTask(lane) {
   const taskRecord = "docs/tasks/" + nextWave.id + "-" + lane.id + ".md";
   const scopedFiles = lane.scope.filter((path) => !path.includes("docs/tasks/"));
@@ -36,6 +51,7 @@ function laneTask(lane) {
     "When Cargo checks can overlap another lane, prefix them with CARGO_TARGET_DIR=" + cargoTarget + " to avoid shared build-lock contention.",
     "Leave the application runnable at the lane boundary. Run focused automated checks that provide evidence for that claim, and report any gap honestly.",
     "Return the nested work-unit handoff plus the task record path and any blocker.",
+    "Your final action must call the injected structured_output tool exactly once. Return status accepted only when the nested writer is finished, acceptance is met, focused checks passed, and no blocker remains; otherwise return blocked.",
     "Lane directive:",
     JSON.stringify(normalizedLane)
   ].join("\n");
@@ -59,7 +75,7 @@ try {
       task: laneTask(lane),
       worktree: true,
       output: "lanes/" + nextWave.id + "-" + lane.id + ".md",
-      outputMode: "file-only"
+      outputSchema: laneOutputSchema
     })));
   } else {
     laneResults = [];
@@ -69,7 +85,7 @@ try {
         task: laneTask(lane),
         worktree: true,
         output: "lanes/" + nextWave.id + "-" + lane.id + ".md",
-        outputMode: "file-only"
+        outputSchema: laneOutputSchema
       }));
     }
   }
@@ -89,9 +105,21 @@ const normalizedResults = laneResults.map((result) => ({
   runId: result.runId,
   ok: result.ok,
   output: result.output,
+  structuredOutput: result.structuredOutput,
   artifactPaths: result.artifactPaths
 }));
-const failedResults = normalizedResults.filter((result) => !result.ok);
+const failedResults = normalizedResults.filter((result, index) => {
+  const expectedTaskRecord = "docs/tasks/" + nextWave.id + "-" + nextWave.lanes[index].id + ".md";
+  return (
+    !result.ok ||
+    result.structuredOutput?.status !== "accepted" ||
+    result.structuredOutput?.nestedWriterComplete !== true ||
+    result.structuredOutput?.taskRecord !== expectedTaskRecord ||
+    !result.structuredOutput?.changedFiles?.length ||
+    !result.structuredOutput?.checks?.length ||
+    result.structuredOutput?.blockers?.length > 0
+  );
+});
 if (failedResults.length > 0) {
   await state.set("complexWork", {
     ...workflowState,

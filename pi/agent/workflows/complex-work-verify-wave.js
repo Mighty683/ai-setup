@@ -2,8 +2,8 @@ const workflowState = await state.get("complexWork");
 if (!workflowState || !workflowState.pendingReview || !workflowState.pendingReview.reviewFindings) {
   throw new Error("A reviewed complex-work wave is required before user verification.");
 }
-if (workflowState.pendingReview.reviewFindings.some((finding) => !finding.ok)) {
-  throw new Error("All review lanes must complete successfully before user verification.");
+if (workflowState.pendingReview.reviewVerdict !== "passed") {
+  throw new Error("Review must pass without blocking findings before user verification.");
 }
 
 const verifiedWave = workflowState.pendingReview.wave;
