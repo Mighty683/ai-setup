@@ -30,7 +30,7 @@ export type RunStatus = { state: string; output?: string; runId?: string };
 /** Durable child receipts contain full output; runtime terminal state remains the completion authority. */
 export async function inspectRun(job: Job, rpc: Rpc): Promise<RunStatus> {
   const receipt = await readJson<Receipt>(job.receipt);
-  if (receipt && receipt.operationId !== job.id) throw new Error("Mismatched child receipt");
+  if (receipt && receipt.operationId !== job.operationId) throw new Error("Mismatched child receipt");
   const runId = job.runId ?? receipt?.runId;
   if (!runId) return { state: "unknown" };
   const response = await rpc("status", { id: runId });

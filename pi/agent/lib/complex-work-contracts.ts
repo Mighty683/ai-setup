@@ -1,9 +1,9 @@
-// Versioned interchange for research, executable task graphs, and review evidence.
+// Scope approval, model-authored work graphs, and revision-bound evidence contracts.
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 
 const text = () => Type.String({ minLength: 1, pattern: "\\S" });
-const id = () => Type.String({ pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$" });
+const id = () => Type.String({ pattern: "^(?!(?:constructor|prototype)$)[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$" });
 const strings = () => Type.Array(text());
 const object = <T extends Record<string, TSchema>>(fields: T) => Type.Object(fields, { additionalProperties: false });
 
@@ -11,6 +11,9 @@ export const researchBriefSchema = object({
   summary: text(), evidence: Type.Array(text(), { minItems: 1 }), constraints: strings(),
   unresolvedDecisions: strings(), resolvedDecisions: Type.Optional(strings()),
 });
+/** The coordinating model supplies identities and instructions; capabilities come from the execution contract. */
+export const assignmentSchema = object({ id: id(), name: text(), instructions: text(), model: Type.Optional(text()) });
+export type Assignment = Static<typeof assignmentSchema>;
 export const resourceSchema = object({
   kind: Type.Union([Type.Literal("file"), Type.Literal("directory"), Type.Literal("contract")]),
   name: text(), access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
@@ -21,13 +24,13 @@ export const checkSchema = object({
   cwd: Type.Optional(text()), timeoutMs: Type.Integer({ minimum: 1000, maximum: 1_800_000 }),
 });
 export const taskSchema = object({
-  id: id(), objective: text(), dependsOn: Type.Array(id(), { uniqueItems: true }),
+  id: id(), objective: text(),
   resources: Type.Array(resourceSchema, { minItems: 1 }),
   criteria: Type.Array(id(), { minItems: 1, uniqueItems: true }),
-  checks: Type.Array(checkSchema, { minItems: 1 }), model: Type.Optional(text()),
+  checks: Type.Array(checkSchema, { minItems: 1 }),
 });
 export const planSchema = object({
-  version: Type.Literal(2), objective: text(), nonGoals: strings(), constraints: strings(),
+  version: Type.Literal(3), objective: text(), nonGoals: strings(), constraints: strings(),
   acceptanceCriteria: Type.Array(object({ id: id(), description: text() }), { minItems: 1 }),
   tasks: Type.Array(taskSchema, { minItems: 1, maxItems: 48 }),
   finalChecks: Type.Array(checkSchema, { minItems: 1 }),
@@ -77,24 +80,8 @@ function duplicateIds(items: { id: string }[], label: string): string[] {
 }
 export function planSemanticErrors(plan: ImplementationPlan): string[] {
   const errors = [...duplicateIds(plan.tasks, "task"), ...duplicateIds(plan.acceptanceCriteria, "criterion")];
-  const tasks = new Map(plan.tasks.map(task => [task.id, task]));
   const criteria = new Set(plan.acceptanceCriteria.map(criterion => criterion.id));
-  const visited = new Set<string>();
-  const visiting = new Set<string>();
-  const visit = (task: Task) => {
-    if (visiting.has(task.id)) { errors.push(`Dependency cycle at ${task.id}`); return; }
-    if (visited.has(task.id)) return;
-    visiting.add(task.id);
-    for (const dependency of task.dependsOn) {
-      const parent = tasks.get(dependency);
-      if (!parent) errors.push(`${task.id}: unknown dependency ${dependency}`);
-      else visit(parent);
-    }
-    visiting.delete(task.id);
-    visited.add(task.id);
-  };
   for (const task of plan.tasks) {
-    visit(task);
     if (!task.resources.some(resource => resource.access === "write" && resource.kind !== "contract")) errors.push(`${task.id}: no writable paths`);
     for (const resource of task.resources) {
       if (resource.kind !== "contract" && !safePath(resource.name)) errors.push(`${task.id}: unsafe resource ${resource.name}`);
@@ -128,4 +115,58 @@ export const compileResearchBrief = (markdown: string) => compileRecord<Research
 export function compileImplementationPlan(markdown: string): CompilationResult<ImplementationPlan> {
   const compiled = compileRecord<ImplementationPlan>(markdown, planSchema);
   return compiled.ok ? validateImplementationPlan(compiled.value) : compiled;
+}
+
+/** Operations describe capabilities and evidence, never a prescribed research/implementation sequence. */
+const workBase = { id: id(), dependsOn: Type.Array(id(), { uniqueItems: true }), allowFailed: Type.Optional(Type.Array(id(), { uniqueItems: true })) };
+export const workSchema = Type.Union([
+  object({ ...workBase, kind: Type.Literal("agent"), access: Type.Union([Type.Literal("read"), Type.Literal("write")]),
+    assignment: assignmentSchema, taskId: Type.Optional(id()), input: Type.Optional(id()) }),
+  object({ ...workBase, kind: Type.Literal("review"), assignment: assignmentSchema,
+    taskId: Type.Optional(id()), input: id() }),
+  object({ ...workBase, kind: Type.Literal("check"), taskId: Type.Optional(id()), input: Type.Optional(id()) }),
+  object({ ...workBase, kind: Type.Literal("integrate"), taskId: id(), input: id(),
+    checks: Type.Array(id(), { minItems: 1, uniqueItems: true }), reviews: Type.Array(id(), { minItems: 1, uniqueItems: true }) }),
+]);
+export const workBatchSchema = Type.Array(workSchema, { minItems: 1, maxItems: 128 });
+export type WorkDefinition = Static<typeof workSchema>;
+/** Drop ledger metadata when validating a stored operation's executable definition. */
+export function workDefinition(job: Record<string, unknown>): WorkDefinition {
+  const keys = ["id", "dependsOn", "allowFailed", "kind", "access", "assignment", "taskId", "input", "checks", "reviews"];
+  return Object.fromEntries(keys.filter(key => job[key] !== undefined).map(key => [key, job[key]])) as WorkDefinition;
+}
+export const deliverySchema = object({
+  checks: Type.Array(id(), { minItems: 1, uniqueItems: true }),
+  reviews: Type.Array(id(), { minItems: 1, uniqueItems: true }),
+});
+export type DeliveryEvidence = Static<typeof deliverySchema>;
+
+/** Validate the entire append before admitting any work; existing work is immutable. */
+export function validateWorkBatch(value: unknown, existing: WorkDefinition[]): CompilationResult<WorkDefinition[]> {
+  const parsed = compileRecord<WorkDefinition[]>(JSON.stringify(value), workBatchSchema);
+  if (!parsed.ok) return parsed;
+  const all = [...existing, ...parsed.value];
+  const errors = duplicateIds(all, "work");
+  const items = new Map(all.map(item => [item.id, item]));
+  const seen = new Set<string>(); const visiting = new Set<string>();
+  const visit = (item: WorkDefinition) => {
+    if (visiting.has(item.id)) { errors.push(`Dependency cycle at ${item.id}`); return; }
+    if (seen.has(item.id)) return;
+    visiting.add(item.id);
+    for (const id of item.dependsOn) {
+      const parent = items.get(id);
+      if (!parent) errors.push(`${item.id}: unknown dependency ${id}`);
+      else visit(parent);
+    }
+    visiting.delete(item.id); seen.add(item.id);
+  };
+  for (const item of all) {
+    visit(item);
+    for (const ref of item.allowFailed ?? []) if (!item.dependsOn.includes(ref)) errors.push(`${item.id}: allowed failed input ${ref} must be a dependency`);
+    const references = [item.input, ...(item.kind === "integrate" ? [...item.checks, ...item.reviews] : [])].filter(Boolean) as string[];
+    for (const ref of references) if (!item.dependsOn.includes(ref)) errors.push(`${item.id}: evidence/input ${ref} must be a direct dependency`);
+    if (item.kind === "agent" && item.access === "write" && !item.taskId) errors.push(`${item.id}: writable work requires an approved taskId`);
+    if (item.kind === "check" && item.taskId && !item.input) errors.push(`${item.id}: task checks require a candidate input`);
+  }
+  return errors.length ? { ok: false, errors: [...new Set(errors)] } : parsed;
 }

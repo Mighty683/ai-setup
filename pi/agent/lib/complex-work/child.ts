@@ -21,7 +21,7 @@ export async function writablePath(contract: ChildContract, input: string): Prom
   return containedPath(contract.cwd, relative);
 }
 export default function complexWorkChild(pi: ExtensionAPI): void {
-  const raw = JSON.parse(process.env.PI_SUBAGENT_EXTENSION_BINDINGS ?? "{}")["complex-work/2"];
+  const raw = JSON.parse(process.env.PI_SUBAGENT_EXTENSION_BINDINGS ?? "{}")["complex-work/3"];
   if (!raw) throw new Error("Complex-work roles must be launched by their controller.");
   const contract = raw as ChildContract;
   const allowed = contract.role === "writer" ? WRITE_TOOLS : READ_TOOLS;

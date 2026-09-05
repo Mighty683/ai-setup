@@ -51,11 +51,11 @@ For substantial implementation:
 /complex-work <request>
 ```
 
-The controller researches and compiles a task graph, then presents a revision for approval. Use `/complex-work-go <revision>` to authorize its scope and operating policy. Independent tasks run in private checkouts through focused research, implementation, checks, review, and integration. The default policy continues without per-task approval; `/complex-work-verify <revision>` applies the final reviewed patch.
+The main LLM inspects the request and chooses assignments and dependencies. The controller records work and evidence without prescribing stages or follow-up agents. Use `/complex-work-go <revision>` to authorize proposed scope and commands. Within that authority, the LLM can queue work, inspect results, and choose corrections. Integration requires matching passing check and independent review evidence. `/complex-work-verify <revision>` applies the final reviewed patch after the LLM requests delivery.
 
-Use `/complex-work-status`, `/complex-work-pause`, `/complex-work-resume`, `/complex-work-steer`, `/complex-work-retry`, `/complex-work-replan`, and `/complex-work-cancel` for control. `/complex-work-policy {"checkpoints":"task"}` enables approval before each task's integration. The model-facing control tool only reads status.
+Use `/complex-work-status`, `/complex-work-pause`, `/complex-work-resume`, `/complex-work-steer`, `/complex-work-retry`, `/complex-work-replan`, and `/complex-work-cancel` for control. Retry and replan ask the main LLM to reassess; they do not restart a fixed sequence. `/complex-work-policy {"checkpoints":"task"}` enables approval of each integration work ID. The model-facing tools expose the work ledger and accept scope, work, and delivery proposals; only user commands grant scope and delivery approval.
 
-See [architecture, controls and limits](../../docs/complex-work.md). The old wave scripts and `finish`/`abandon` phase commands are retired. Runtime roles are registered by the extension and cannot delegate. Set `PI_SOUND_DISABLED=1` to disable attention bells.
+See [architecture, controls and limits](../../docs/complex-work.md). The old wave scripts and `finish`/`abandon` phase commands are retired. Agents are defined by the coordinating LLM and registered per operation by the extension; child agents cannot delegate. Set `PI_SOUND_DISABLED=1` to disable attention bells.
 
 ## 6. Secrets
 

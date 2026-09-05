@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compileImplementationPlan, validateImplementationPlan, resourcesConflict, safePath } from '../lib/complex-work-contracts.ts';
-import { plan, task, markdown } from './complex-work-fixtures.mjs';
+import { compileImplementationPlan, validateImplementationPlan, resourcesConflict, safePath, validateWorkBatch } from '../lib/complex-work-contracts.ts';
+import { plan, task, markdown, readWork, writeWork } from './complex-work-fixtures.mjs';
 
-test('task graph rejects cycles, missing dependencies, and unassigned criteria', () => {
-  assert.match(validateImplementationPlan(plan([task('a', ['b']), task('b', ['a'])])).errors.join('\n'), /cycle/);
-  assert.match(validateImplementationPlan(plan([task('a', ['missing'])])).errors.join('\n'), /unknown dependency/);
+test('scope rejects duplicate tasks and unassigned criteria', () => {
+  assert.match(validateImplementationPlan(plan([task('a'), task('a')])).errors.join('\n'), /Duplicate task/);
   const value = plan(); value.acceptanceCriteria.push({ id: 'missing', description: 'Unassigned' });
   assert.match(validateImplementationPlan(value).errors.join('\n'), /Unassigned/);
+});
+test('work graph rejects cycles, unknown dependencies and undeclared input dependencies', () => {
+  assert.match(validateWorkBatch([readWork('a', ['b']), readWork('b', ['a'])], []).errors.join('\n'), /cycle/);
+  assert.match(validateWorkBatch([readWork('a', ['missing'])], []).errors.join('\n'), /unknown dependency/);
+  assert.match(validateWorkBatch([readWork('a'), { ...readWork('b'), input: 'a' }], []).errors.join('\n'), /direct dependency/);
+  assert.match(validateWorkBatch([{ ...readWork('a'), allowFailed: ['missing'] }], []).errors.join('\n'), /must be a dependency/);
 });
 test('final invalid JSON never falls back to an earlier valid plan', () => {
   assert.equal(compileImplementationPlan(markdown(plan()) + '\n```json\n{invalid}\n```').ok, false);
@@ -26,4 +31,13 @@ test('unsafe paths, empty checks and unknown criteria are rejected', () => {
   assert.equal(validateImplementationPlan(value).ok, false);
   value.tasks[0] = task('a'); value.tasks[0].criteria = ['unknown'];
   assert.match(validateImplementationPlan(value).errors.join('\n'), /unknown criterion/);
+});
+test('agent work requires instructions and write authority is tied to a scope task', () => {
+  const missing = readWork('a'); delete missing.assignment;
+  assert.equal(validateWorkBatch([missing], []).ok, false);
+  const empty = readWork('a'); empty.assignment.instructions = '  ';
+  assert.equal(validateWorkBatch([empty], []).ok, false);
+  const unauthorized = writeWork('a'); delete unauthorized.taskId;
+  assert.match(validateWorkBatch([unauthorized], []).errors.join('\n'), /approved taskId/);
+  assert.equal(validateWorkBatch([readWork('constructor')], []).ok, false);
 });

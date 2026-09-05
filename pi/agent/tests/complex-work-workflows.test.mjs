@@ -8,8 +8,9 @@ import { git, createWorkspace, createCheckout, checkpoint, assertScope, integrat
 import { writablePath } from '../lib/complex-work/child.ts';
 import { durableCheck } from '../lib/complex-work/checks.ts';
 import { runLocal } from '../lib/complex-work/engine.ts';
-import { freshTask, DEFAULT_POLICY } from '../lib/complex-work/state.ts';
-import { plan, task, check } from './complex-work-fixtures.mjs';
+import { DEFAULT_POLICY } from '../lib/complex-work/state.ts';
+import { prepareAgent, collectAgentResult } from '../lib/complex-work/execution.ts';
+import { plan, task, check, harness, brief, writer, review, until, writeWork, checkWork, reviewWork, integrateWork } from './complex-work-fixtures.mjs';
 
 async function repo(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'complex-git-'));
@@ -83,20 +84,34 @@ test('durable check executes once across concurrent observers and records a real
   const failed = await durableCheck({ ...check, args: ['-e', 'process.exit(7)'] }, source, path.join(root, 'failure'), signal);
   assert.equal(failed.code, 7);
 });
-test('real local validation records acceptance evidence and integration stays clean for the next task', async t => {
+test('real ledger executes explicit work and delivers only the checked and reviewed revision', async t => {
   const { root, source } = await repo(t);
   const workspace = await createWorkspace(source, path.join(root, 'mission'));
-  const cwd = await createCheckout(workspace, 'writer', workspace.head);
-  await writeFile(path.join(cwd, 'src/a.ts'), 'implemented\n');
-  const state = { id: 'test-mission', revision: 1, workspace, plan: plan(), policy: DEFAULT_POLICY, tasks: { a: { ...freshTask(), cwd, base: workspace.head, scout: 'src/a.ts is the seam' } } };
-  const job = { id: 'validation', kind: 'validate', taskId: 'a', cwd, receipt: path.join(root, 'validate.json') };
-  const result = await runLocal(state, job, new AbortController().signal);
-  assert.equal(result.checks[0].code, 0);
-  Object.assign(state.tasks.a, { candidate: result.candidate, checks: result.checks });
-  const integrated = await runLocal(state, { ...job, id: 'integration', kind: 'integrate', receipt: path.join(root, 'integration.json') }, new AbortController().signal);
-  state.workspace.head = integrated.head;
+  const h = await harness(t, { workspace }, {
+    prepare: prepareAgent, collect: collectAgentResult, local: runLocal,
+    deliver: (state, signal) => deliver(state.workspace, signal),
+  });
+  await h.engine.submitScope(brief, plan()); await h.engine.userAction('go', '1');
+  await h.engine.submitWork([writeWork('change')]);
+  await until(() => h.state.work.change.runId);
+  await writeFile(path.join(h.state.work.change.cwd, 'src/a.ts'), 'implemented\n');
+  await h.complete('change', writer);
+  assert.equal(h.state.work.change.status, 'completed');
+  await h.engine.submitWork([reviewWork('inspection', 'change', 'a'), checkWork('checks', 'change', 'a')]);
+  await h.complete('inspection', review);
+  await until(() => h.state.work.checks.status === 'completed');
+  await h.engine.submitWork([integrateWork('merge', 'change', ['checks'], ['inspection'])]);
+  await until(() => h.state.work.merge.status === 'completed', JSON.stringify(h.state.work.merge));
   assert.equal((await git(workspace.repo, ['status', '--porcelain'])).trim(), '');
-  assert.equal(await readFile(path.join(workspace.repo, 'src/a.ts'), 'utf8'), 'implemented\n');
+  assert.equal(await readFile(path.join(source, 'src/a.ts'), 'utf8'), 'old\n');
+  await h.engine.submitWork([checkWork('final-checks'), reviewWork('final-review', 'final-checks')]);
+  await h.complete('final-review', review);
+  await h.engine.requestDelivery({ checks: ['final-checks'], reviews: ['final-review'] });
+  const beforeHead = await head(source);
+  await h.engine.userAction('verify', '1');
+  assert.equal(h.state.status, 'completed');
+  assert.equal(await readFile(path.join(source, 'src/a.ts'), 'utf8'), 'implemented\n');
+  assert.equal(await head(source), beforeHead);
 });
 
 test('input snapshot respects repository-local excludes and rejects recursive storage', async t => {
@@ -113,7 +128,9 @@ test('final checks that modify source cannot alter the integration baseline', as
   const workspace = await createWorkspace(source, path.join(root, 'mission'));
   const value = plan(); value.finalChecks = [{ ...check, args: ['-e', 'require("fs").writeFileSync("src/a.ts","bad")'] }];
   const state = { workspace, plan: value };
-  const job = { id: 'final', kind: 'final-check', receipt: path.join(root, 'final.json') };
+  const job = { id: 'final', operationId: 'final', kind: 'check', revision: 1, dependsOn: [],
+    snapshot: { cwd: workspace.repo, base: workspace.baseline, candidate: workspace.head, integratedHead: workspace.head, revision: 1 },
+    receipt: path.join(root, 'final.json') };
   await assert.rejects(runLocal(state, job, new AbortController().signal), /changed source/);
   assert.equal(await readFile(path.join(workspace.repo, 'src/a.ts'), 'utf8'), 'old\n');
   assert.equal(await head(workspace.repo), workspace.head);
