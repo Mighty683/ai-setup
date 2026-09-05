@@ -14,14 +14,14 @@ finished
 
 ## Acceptance criteria
 
-- Validate and replay chronological current-branch complex-work snapshots, ignoring malformed entries and retaining the final valid snapshot.
+- Validate and replay current-branch complex-work snapshots in branch order, ignoring malformed entries and retaining the final valid snapshot even when timestamps regress.
 - Show a bounded read-only TUI overlay with current state and coalesced semantic phase history/durations.
 - Return deterministic text outside TUI without delegating status to the LLM.
 - Preserve inactive/non-root behavior and existing transition authorization.
 
 ## Runnable-state evidence
 
-`node --test tests/complex-work-extension.test.mjs` passes 6 tests. `npm test --force` passes 17 tests; `--force` bypasses npm's repository `devEngines` package-manager mismatch. Primary TypeScript diagnostics and `git diff --check` pass.
+`node --test tests/complex-work-extension.test.mjs` passes 7 tests, including a timestamp-regression replay case. `npm test --force` passes 18 tests; `--force` bypasses npm's repository `devEngines` package-manager mismatch. Primary TypeScript diagnostics and `git diff --check` pass.
 
 ## Blockers
 

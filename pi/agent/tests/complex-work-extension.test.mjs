@@ -54,20 +54,24 @@ function commandContext() {
   };
 }
 
-test("steering commands route through the gated control tool", async () => {
+test("steering commands execute gated transitions without prompting the agent", async () => {
   const harness = extensionHarness();
-  await harness.commands
-    .get("complex-work")
-    .handler("review loop", commandContext());
+  const notifications = [];
+  const context = {
+    ...commandContext(),
+    ui: { notify: (...args) => notifications.push(args) },
+  };
+  await harness.commands.get("complex-work").handler("review loop", context);
+  await harness.commands.get("complex-work-plan").handler("", context);
 
-  await harness.commands
-    .get("complex-work-abandon")
-    .handler("", commandContext());
+  const status = await harness.tools
+    .get("complex_work_control")
+    .execute("status", { action: "status" });
 
-  assert.match(
-    harness.userMessages.at(-1),
-    /complex_work_control with action "abandon"/,
-  );
+  assert.equal(status.details.state.phase, "planning");
+  assert.equal(status.details.state.expectedAction, "plan");
+  assert.match(notifications.at(-1)[0], /Authorized workflow: plan/);
+  assert.equal(harness.userMessages.length, 0);
 });
 
 test("planning retry requires an explicitly recorded workflow failure", async () => {
@@ -201,6 +205,38 @@ test("replays valid chronological snapshots and coalesces phase durations", asyn
     formatComplexWorkStatus(states.at(-1), history),
     /current since 2025-01-01T00:02:00.000Z/,
   );
+});
+
+test("replay retains a final valid branch snapshot after its timestamp regresses", async () => {
+  const { replayComplexWorkStates } = await import(
+    "../extensions/complex-work.ts"
+  );
+  const states = replayComplexWorkStates([
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "clock rollback",
+        phase: "executing",
+        updatedAt: "2025-01-02T00:00:00.000Z",
+      },
+    },
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "clock rollback",
+        phase: "integrating",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    states.map(({ phase }) => phase),
+    ["executing", "integrating"],
+  );
+  assert.equal(states.at(-1).phase, "integrating");
 });
 
 test("status opens and closes a TUI overlay but uses deterministic non-TUI text", async () => {

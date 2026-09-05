@@ -10,7 +10,10 @@
  */
 
 import { spawn } from "node:child_process";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentToolResult,
+  ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
@@ -135,7 +138,6 @@ export function replayComplexWorkStates(
   entries: readonly unknown[],
 ): ComplexWorkState[] {
   const states: ComplexWorkState[] = [];
-  let lastTimestamp = -Infinity;
   for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
     const candidate = entry as {
@@ -148,11 +150,10 @@ export function replayComplexWorkStates(
       candidate.customType === STATE_ENTRY &&
       isComplexWorkState(candidate.data)
     ) {
-      const timestamp = Date.parse(candidate.data.updatedAt);
-      if (timestamp >= lastTimestamp) {
-        states.push(candidate.data);
-        lastTimestamp = timestamp;
-      }
+      // Session branch order is the persistence chronology. Timestamps are display
+      // metadata and may regress after a clock adjustment, so they must not affect
+      // which valid snapshot is restored as current state.
+      states.push(candidate.data);
     }
   }
   return states;
@@ -346,18 +347,221 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         ? "Start this as a mission-backed asynchronous workflow from the target repository; do not set mission: false."
         : `Attach it to missionId ${state?.missionId ?? "<mission-id>"} and launch asynchronously from the target repository.`;
     const expectedStatus = completionStatuses[state?.phase ?? "ready-to-plan"];
-    const next =
-      action === "plan"
-        ? 'When planning succeeds, call complex_work_control with action "plan-complete" and its missionId. If the workflow fails, call action "plan-failed" with resultStatus "planning-failed" before requesting retry-plan.'
-        : action === "review"
-          ? 'After the workflow succeeds, call complex_work_control with action "complete" and its exact resultStatus: either "review-passed" or "review-decision-required".'
-          : `Only after the workflow succeeds with status ${expectedStatus}, call complex_work_control with action "complete" and resultStatus "${expectedStatus}". On failure, report the blocker and leave this phase unchanged.`;
+    let next = `Only after the workflow succeeds with status ${expectedStatus}, call complex_work_control with action "complete" and resultStatus "${expectedStatus}". On failure, report the blocker and leave this phase unchanged.`;
+    if (action === "plan") {
+      next =
+        'When planning succeeds, call complex_work_control with action "plan-complete" and its missionId. If the workflow fails, call action "plan-failed" with resultStatus "planning-failed" before requesting retry-plan.';
+    } else if (action === "review") {
+      next =
+        'After the workflow succeeds, call complex_work_control with action "complete" and its exact resultStatus: either "review-passed" or "review-decision-required".';
+    }
     return [
       `Authorized workflow: ${action}.`,
       `Call subagent with workflowScriptPath: ${workflowPaths[action]}.`,
       missionArgument,
       next,
     ].join(" ");
+  };
+
+  /** Applies one validated state-machine action for both the agent tool and UI commands. */
+  const executeControlAction = async (params: {
+    action: string;
+    missionId?: string;
+    resultStatus?: string;
+  }): Promise<AgentToolResult<{ state: ComplexWorkState | null }>> => {
+    const action = params.action.trim();
+    if (!state) {
+      throw new Error(
+        "No active complex-work session. Start one with /complex-work <request>.",
+      );
+    }
+    if (action === "status") {
+      return {
+        content: [{ type: "text", text: describeState(state) }],
+        details: { state: state ?? null },
+      };
+    }
+    if (action === "abandon" || action === "finish") {
+      state = {
+        ...state,
+        phase: "inactive",
+        expectedAction: undefined,
+        updatedAt: now(),
+      };
+      persist();
+      disableControl();
+      const message =
+        action === "finish"
+          ? "Complex-work session finished; workflow control is disabled. Report the final diff, checks, task records, risks, and user verification evidence."
+          : "Complex-work session abandoned; workflow control is disabled.";
+      return {
+        content: [{ type: "text", text: message }],
+        details: { state: null },
+      };
+    }
+    if (action === "plan-failed") {
+      if (
+        state.phase !== "planning" ||
+        state.expectedAction ||
+        params.resultStatus !== "planning-failed"
+      ) {
+        throw new Error(
+          "plan-failed requires a launched planning workflow that returned resultStatus planning-failed.",
+        );
+      }
+      state = {
+        ...state,
+        phase: "planning-failed",
+        expectedAction: undefined,
+        updatedAt: now(),
+      };
+      persist();
+      return {
+        content: [{ type: "text", text: describeState(state) }],
+        details: { state: state ?? null },
+      };
+    }
+    if (action === "plan-complete") {
+      if (state.phase !== "planning" || !params.missionId?.trim()) {
+        throw new Error(
+          "plan-complete requires a successful planning launch and its missionId.",
+        );
+      }
+      if (state.missionId && params.missionId.trim() !== state.missionId) {
+        throw new Error(
+          `Replanning must remain attached to mission ${state.missionId}.`,
+        );
+      }
+      state = {
+        ...state,
+        phase: "awaiting-go",
+        missionId: params.missionId.trim(),
+        expectedAction: undefined,
+        updatedAt: now(),
+      };
+      persist();
+      playUserAttentionSound();
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Planning recorded. Publish STATUS: and WORK PLAN:, then wait for explicit user GO. Mission: ${state.missionId}.`,
+          },
+        ],
+        details: { state: state ?? null },
+      };
+    }
+    if (action === "go") {
+      if (state.phase !== "awaiting-go") {
+        throw new Error("GO is only valid after planning has completed.");
+      }
+      state = {
+        ...state,
+        phase: "executing",
+        expectedAction: "execute",
+        updatedAt: now(),
+      };
+      persist();
+      return {
+        content: [{ type: "text", text: launchInstructions("execute") }],
+        details: { state: state ?? null },
+      };
+    }
+    if (action === "replan" || action === "retry-plan") {
+      const isReviewReplan =
+        action === "replan" && state.phase === "awaiting-review-decision";
+      const isPlanningRetry =
+        action === "retry-plan" && state.phase === "planning-failed";
+      if (!isReviewReplan && !isPlanningRetry) {
+        throw new Error(
+          action === "replan"
+            ? "Replan is only valid after review requires a user decision."
+            : "retry-plan is only valid after plan-failed records an authorized planning workflow failure.",
+        );
+      }
+      state = {
+        ...state,
+        phase: "planning",
+        expectedAction: "plan",
+        updatedAt: now(),
+      };
+      persist();
+      return {
+        content: [{ type: "text", text: launchInstructions("plan") }],
+        details: { state: state ?? null },
+      };
+    }
+    if (action === "complete") {
+      let next: Phase | undefined;
+      const expectedStatus = completionStatuses[state.phase];
+      if (state.phase === "reviewing") {
+        if (params.resultStatus === "review-passed") next = "verifying";
+        else if (params.resultStatus === "review-decision-required") {
+          next = "awaiting-review-decision";
+        } else {
+          throw new Error(
+            "Refusing to advance reviewing: resultStatus must be review-passed or review-decision-required.",
+          );
+        }
+      } else {
+        const nextPhase: Partial<Record<Phase, Phase>> = {
+          executing: "integrating",
+          integrating: "reviewing",
+          verifying: "closing",
+          closing: "awaiting-go",
+        };
+        next = nextPhase[state.phase];
+        if (!next)
+          throw new Error(`complete is not valid during ${state.phase}.`);
+        if (!expectedStatus || params.resultStatus !== expectedStatus) {
+          throw new Error(
+            `Refusing to advance ${state.phase}: complete requires resultStatus ${expectedStatus ?? "<none>"} from a successful workflow result.`,
+          );
+        }
+      }
+      state = {
+        ...state,
+        phase: next,
+        expectedAction: undefined,
+        updatedAt: now(),
+      };
+      persist();
+      if (
+        next === "awaiting-go" ||
+        next === "awaiting-review-decision" ||
+        next === "verifying"
+      ) {
+        playUserAttentionSound();
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              next === "awaiting-go"
+                ? "Wave closed. Publish RESULTS: and PLAN UPDATE:, then wait for the user's GO before the next wave."
+                : describeState(state),
+          },
+        ],
+        details: { state: state ?? null },
+      };
+    }
+    if (!isWorkflowAction(action) || action !== actionForPhase(state.phase)) {
+      throw new Error(
+        `Action ${action} is not valid during ${state.phase}. ${describeState(state)}`,
+      );
+    }
+    state = {
+      ...state,
+      phase: action === "plan" ? "planning" : state.phase,
+      expectedAction: action,
+      updatedAt: now(),
+    };
+    persist();
+    return {
+      content: [{ type: "text", text: launchInstructions(action) }],
+      details: { state: state ?? null },
+    };
   };
 
   pi.registerTool<typeof controlParams, { state: ComplexWorkState | null }>({
@@ -372,201 +576,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       "Use complex_work_control action status to report the current complex-work gate without guessing.",
     ],
     parameters: controlParams,
-    async execute(_toolCallId, params) {
-      const action = params.action.trim();
-      if (!state) {
-        throw new Error(
-          "No active complex-work session. Start one with /complex-work <request>.",
-        );
-      }
-      if (action === "status") {
-        return {
-          content: [{ type: "text", text: describeState(state) }],
-          details: { state: state ?? null },
-        };
-      }
-      if (action === "abandon" || action === "finish") {
-        state = {
-          ...state,
-          phase: "inactive",
-          expectedAction: undefined,
-          updatedAt: now(),
-        };
-        persist();
-        disableControl();
-        const message =
-          action === "finish"
-            ? "Complex-work session finished; workflow control is disabled. Report the final diff, checks, task records, risks, and user verification evidence."
-            : "Complex-work session abandoned; workflow control is disabled.";
-        return {
-          content: [{ type: "text", text: message }],
-          details: { state: null },
-        };
-      }
-      if (action === "plan-failed") {
-        if (
-          state.phase !== "planning" ||
-          state.expectedAction ||
-          params.resultStatus !== "planning-failed"
-        ) {
-          throw new Error(
-            "plan-failed requires a launched planning workflow that returned resultStatus planning-failed.",
-          );
-        }
-        state = {
-          ...state,
-          phase: "planning-failed",
-          expectedAction: undefined,
-          updatedAt: now(),
-        };
-        persist();
-        return {
-          content: [{ type: "text", text: describeState(state) }],
-          details: { state: state ?? null },
-        };
-      }
-      if (action === "plan-complete") {
-        if (state.phase !== "planning" || !params.missionId?.trim()) {
-          throw new Error(
-            "plan-complete requires a successful planning launch and its missionId.",
-          );
-        }
-        if (state.missionId && params.missionId.trim() !== state.missionId) {
-          throw new Error(
-            `Replanning must remain attached to mission ${state.missionId}.`,
-          );
-        }
-        state = {
-          ...state,
-          phase: "awaiting-go",
-          missionId: params.missionId.trim(),
-          expectedAction: undefined,
-          updatedAt: now(),
-        };
-        persist();
-        playUserAttentionSound();
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Planning recorded. Publish STATUS: and WORK PLAN:, then wait for explicit user GO. Mission: ${state.missionId}.`,
-            },
-          ],
-          details: { state: state ?? null },
-        };
-      }
-      if (action === "go") {
-        if (state.phase !== "awaiting-go") {
-          throw new Error("GO is only valid after planning has completed.");
-        }
-        state = {
-          ...state,
-          phase: "executing",
-          expectedAction: "execute",
-          updatedAt: now(),
-        };
-        persist();
-        return {
-          content: [{ type: "text", text: launchInstructions("execute") }],
-          details: { state: state ?? null },
-        };
-      }
-      if (action === "replan" || action === "retry-plan") {
-        const isReviewReplan =
-          action === "replan" && state.phase === "awaiting-review-decision";
-        const isPlanningRetry =
-          action === "retry-plan" && state.phase === "planning-failed";
-        if (!isReviewReplan && !isPlanningRetry) {
-          throw new Error(
-            action === "replan"
-              ? "Replan is only valid after review requires a user decision."
-              : "retry-plan is only valid after plan-failed records an authorized planning workflow failure.",
-          );
-        }
-        state = {
-          ...state,
-          phase: "planning",
-          expectedAction: "plan",
-          updatedAt: now(),
-        };
-        persist();
-        return {
-          content: [{ type: "text", text: launchInstructions("plan") }],
-          details: { state: state ?? null },
-        };
-      }
-      if (action === "complete") {
-        let next: Phase | undefined;
-        const expectedStatus = completionStatuses[state.phase];
-        if (state.phase === "reviewing") {
-          if (params.resultStatus === "review-passed") next = "verifying";
-          else if (params.resultStatus === "review-decision-required") {
-            next = "awaiting-review-decision";
-          } else {
-            throw new Error(
-              "Refusing to advance reviewing: resultStatus must be review-passed or review-decision-required.",
-            );
-          }
-        } else {
-          const nextPhase: Partial<Record<Phase, Phase>> = {
-            executing: "integrating",
-            integrating: "reviewing",
-            verifying: "closing",
-            closing: "awaiting-go",
-          };
-          next = nextPhase[state.phase];
-          if (!next)
-            throw new Error(`complete is not valid during ${state.phase}.`);
-          if (!expectedStatus || params.resultStatus !== expectedStatus) {
-            throw new Error(
-              `Refusing to advance ${state.phase}: complete requires resultStatus ${expectedStatus ?? "<none>"} from a successful workflow result.`,
-            );
-          }
-        }
-        state = {
-          ...state,
-          phase: next,
-          expectedAction: undefined,
-          updatedAt: now(),
-        };
-        persist();
-        if (
-          next === "awaiting-go" ||
-          next === "awaiting-review-decision" ||
-          next === "verifying"
-        ) {
-          playUserAttentionSound();
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                next === "awaiting-go"
-                  ? "Wave closed. Publish RESULTS: and PLAN UPDATE:, then wait for the user's GO before the next wave."
-                  : describeState(state),
-            },
-          ],
-          details: { state: state ?? null },
-        };
-      }
-      if (!isWorkflowAction(action) || action !== actionForPhase(state.phase)) {
-        throw new Error(
-          `Action ${action} is not valid during ${state.phase}. ${describeState(state)}`,
-        );
-      }
-      state = {
-        ...state,
-        phase: action === "plan" ? "planning" : state.phase,
-        expectedAction: action,
-        updatedAt: now(),
-      };
-      persist();
-      return {
-        content: [{ type: "text", text: launchInstructions(action) }],
-        details: { state: state ?? null },
-      };
-    },
+    execute: (_toolCallId, params) => executeControlAction(params),
   });
 
   const steeringCommands = {
@@ -587,7 +597,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
   for (const [action, description] of Object.entries(steeringCommands)) {
     pi.registerCommand(`complex-work-${action}`, {
       description,
-      handler: (_args, ctx) => {
+      handler: async (_args, ctx) => {
         if (!state || state.phase === "inactive" || !isRootSession) {
           ctx.ui.notify(
             "No active complex-work session in this root session.",
@@ -623,10 +633,15 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
             },
           );
         }
-        pi.sendUserMessage(
-          `Call ${CONTROL_TOOL} with action "${action}". Follow its returned instructions exactly and do not authorize the same transition twice.`,
-        );
-        return Promise.resolve();
+        try {
+          const result = await executeControlAction({ action });
+          ctx.ui.notify(result.content[0].text, "info");
+        } catch (error) {
+          ctx.ui.notify(
+            error instanceof Error ? error.message : String(error),
+            "error",
+          );
+        }
       },
     });
   }
@@ -708,12 +723,10 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       persist();
       enableControl();
       pi.setSessionName(`Complex work: ${request.slice(0, 72)}`);
-      pi.sendUserMessage([
-        {
-          type: "text",
-          text: `Complex-work session started for: ${request}\n\nCall ${CONTROL_TOOL} with action "plan". It will authorize the only permitted planning workflow launch.`,
-        },
-      ]);
+      ctx.ui.notify(
+        `Complex-work session started. Run /complex-work-plan to authorize planning.`,
+        "info",
+      );
       return Promise.resolve();
     },
   });
