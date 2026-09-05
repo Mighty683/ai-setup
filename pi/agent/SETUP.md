@@ -57,6 +57,8 @@ Every lane maintains `docs/tasks/<wave>-<lane>.md` with a description, research 
 
 Use `/complex-work-status`, `/complex-work-go`, `/complex-work-verify`, `/complex-work-replan`, `/complex-work-finish`, or `/complex-work-abandon` to steer common transitions. Phase-specific commands also exist for `plan`, `execute`, `integrate`, `review`, `close`, and `retry-plan`; each routes through the same gated control tool rather than bypassing workflow validation.
 
+The complex-work extension plays an attention sound only when the workflow reaches a user-owned gate: plan approval, blocking-review disposition, explicit verification, or approval of the next wave. Set `PI_SOUND_DISABLED=1` to disable it.
+
 The workflow uses `workflowScript`; do not create durable `.chain.md` files. They are a legacy inspection format, not the current execution surface.
 
 ## 6. Secrets

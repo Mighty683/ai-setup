@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import complexWorkExtension from "../extensions/complex-work.ts";
+process.env.PI_SOUND_DISABLED = "1";
+const { default: complexWorkExtension } = await import(
+  "../extensions/complex-work.ts"
+);
 
 function extensionHarness() {
   const handlers = new Map();

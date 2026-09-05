@@ -5,15 +5,19 @@
  * machine. The extension does not execute subagent workflows itself (that
  * runtime is owned by pi-subagents); it exposes the one allowed transition and
  * rejects an out-of-order direct workflow launch while a complex-work session
- * is active.
+ * is active. User-attention sounds are emitted only at workflow gates that
+ * require an explicit user decision or verification.
  */
 
+import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const WORKFLOW_ROOT = "/home/might/.pi/agent/workflows";
 const CONTROL_TOOL = "complex_work_control";
 const STATE_ENTRY = "complex-work-state";
+const WINDOWS_BEEP = "[console]::beep(880, 160)";
+const IS_WSL = Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
 const controlParams = Type.Object({
   action: Type.String({
     description:
@@ -78,6 +82,38 @@ const actions = new Set<WorkflowAction>(
 
 function now(): string {
   return new Date().toISOString();
+}
+
+function ringTerminalBell(): void {
+  process.stdout.write("\x07");
+}
+
+function startSound(command: string, args: string[]): void {
+  try {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.once("error", ringTerminalBell);
+    child.unref();
+  } catch {
+    ringTerminalBell();
+  }
+}
+
+function playUserAttentionSound(): void {
+  if (process.env.PI_SOUND_DISABLED === "1") return;
+
+  if (process.platform === "darwin") {
+    startSound("afplay", ["/System/Library/Sounds/Glass.aiff"]);
+    return;
+  }
+  if (process.platform === "win32" || IS_WSL) {
+    startSound("powershell.exe", ["-NoProfile", "-Command", WINDOWS_BEEP]);
+    return;
+  }
+  startSound("canberra-gtk-play", ["--id=complete"]);
 }
 
 function isWorkflowAction(value: string): value is WorkflowAction {
@@ -246,6 +282,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
           updatedAt: now(),
         };
         persist();
+        playUserAttentionSound();
         return {
           content: [
             {
@@ -331,6 +368,13 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
           updatedAt: now(),
         };
         persist();
+        if (
+          next === "awaiting-go" ||
+          next === "awaiting-review-decision" ||
+          next === "verifying"
+        ) {
+          playUserAttentionSound();
+        }
         return {
           content: [
             {
