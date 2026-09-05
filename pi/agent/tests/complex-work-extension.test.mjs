@@ -135,3 +135,149 @@ test("replanning launch cannot switch mission IDs", async () => {
   assert.equal(blocked.block, true);
   assert.match(blocked.reason, /mission-one/);
 });
+
+test("replays valid chronological snapshots and coalesces phase durations", async () => {
+  const {
+    replayComplexWorkStates,
+    buildPhaseHistory,
+    formatComplexWorkStatus,
+  } = await import("../extensions/complex-work.ts");
+  const entries = [
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "ship popup",
+        phase: "planning",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+    },
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "ship popup",
+        phase: "planning",
+        updatedAt: "2025-01-01T00:00:30.000Z",
+      },
+    },
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "ship popup",
+        phase: "bad",
+        updatedAt: "2025-01-01T00:01:00.000Z",
+      },
+    },
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "ship popup",
+        phase: "awaiting-go",
+        updatedAt: "2025-01-01T00:02:00.000Z",
+      },
+    },
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "",
+        phase: "executing",
+        updatedAt: "2025-01-01T00:03:00.000Z",
+      },
+    },
+  ];
+  const states = replayComplexWorkStates(entries);
+  const history = buildPhaseHistory(states);
+  assert.equal(states.length, 3);
+  assert.deepEqual(
+    history.map(({ phase }) => phase),
+    ["planning", "awaiting-go"],
+  );
+  assert.match(formatComplexWorkStatus(states.at(-1), history), /planning: 2m/);
+  assert.match(
+    formatComplexWorkStatus(states.at(-1), history),
+    /current since 2025-01-01T00:02:00.000Z/,
+  );
+});
+
+test("status opens and closes a TUI overlay but uses deterministic non-TUI text", async () => {
+  const harness = extensionHarness();
+  const branch = [
+    {
+      type: "custom",
+      customType: "complex-work-state",
+      data: {
+        request: "status popup",
+        phase: "executing",
+        rootSessionFile: "/tmp/complex-work-session.jsonl",
+        expectedAction: "execute",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+      },
+    },
+  ];
+  let component;
+  let overlayOptions;
+  const notifications = [];
+  const context = {
+    ...commandContext(),
+    mode: "tui",
+    sessionManager: {
+      getSessionFile: () => "/tmp/complex-work-session.jsonl",
+      getBranch: () => branch,
+    },
+    ui: {
+      notify: (...args) => notifications.push(args),
+      custom(factory, options) {
+        overlayOptions = options;
+        component = factory({ requestRender() {} }, {}, {}, () => {
+          component = undefined;
+        });
+        return Promise.resolve();
+      },
+    },
+  };
+  harness.handlers.get("session_start")({}, context);
+  await harness.commands.get("complex-work-status").handler("", context);
+  assert.equal(overlayOptions.overlay, true);
+  assert.match(component.render(28).join("\n"), /Complex Work Status/);
+  for (let index = 0; index < 20; index++) component.handleInput("\x1b[B");
+  assert.match(component.render(28).join("\n"), /Complex work: status popup/);
+  component.handleInput("\r");
+  assert.equal(component, undefined);
+  await harness.commands
+    .get("complex-work-status")
+    .handler("", { ...context, mode: "print" });
+  assert.match(notifications.at(-1)[0], /Current phase: executing/);
+  assert.equal(harness.userMessages.length, 0);
+});
+
+test("status remains unavailable outside the active root session", async () => {
+  const harness = extensionHarness();
+  const notifications = [];
+  const context = {
+    ...commandContext(),
+    mode: "print",
+    sessionManager: {
+      getSessionFile: () => "/tmp/child.jsonl",
+      getBranch: () => [
+        {
+          type: "custom",
+          customType: "complex-work-state",
+          data: {
+            request: "root only",
+            phase: "executing",
+            rootSessionFile: "/tmp/root.jsonl",
+            updatedAt: "2025-01-01T00:00:00.000Z",
+          },
+        },
+      ],
+    },
+    ui: { notify: (...args) => notifications.push(args) },
+  };
+  harness.handlers.get("session_start")({}, context);
+  await harness.commands.get("complex-work-status").handler("", context);
+  assert.match(notifications.at(-1)[0], /No active complex-work session/);
+});

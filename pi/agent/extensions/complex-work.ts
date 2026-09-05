@@ -11,6 +11,7 @@
 
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 const WORKFLOW_ROOT = "/home/might/.pi/agent/workflows";
@@ -79,6 +80,167 @@ type ComplexWorkState = {
 const actions = new Set<WorkflowAction>(
   Object.keys(workflowPaths) as WorkflowAction[],
 );
+const phases = new Set<Phase>([
+  "ready-to-plan",
+  "planning",
+  "planning-failed",
+  "awaiting-go",
+  "executing",
+  "integrating",
+  "reviewing",
+  "verifying",
+  "closing",
+  "awaiting-review-decision",
+  "inactive",
+]);
+
+type PhaseHistory = { phase: Phase; startedAt: string; endedAt?: string };
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isComplexWorkState(value: unknown): value is ComplexWorkState {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (
+    !isNonEmptyString(candidate.request) ||
+    typeof candidate.phase !== "string" ||
+    !phases.has(candidate.phase as Phase)
+  )
+    return false;
+  if (
+    !isNonEmptyString(candidate.updatedAt) ||
+    Number.isNaN(Date.parse(candidate.updatedAt))
+  )
+    return false;
+  for (const field of ["missionId", "rootSessionFile"] as const) {
+    if (candidate[field] !== undefined && !isNonEmptyString(candidate[field]))
+      return false;
+  }
+  if (candidate.expectedAction === undefined) return true;
+  if (
+    typeof candidate.expectedAction !== "string" ||
+    !isWorkflowAction(candidate.expectedAction)
+  )
+    return false;
+  const expectedAction =
+    candidate.phase === "planning"
+      ? "plan"
+      : actionForPhase(candidate.phase as Phase);
+  return candidate.expectedAction === expectedAction;
+}
+
+export function replayComplexWorkStates(
+  entries: readonly unknown[],
+): ComplexWorkState[] {
+  const states: ComplexWorkState[] = [];
+  let lastTimestamp = -Infinity;
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const candidate = entry as {
+      type?: unknown;
+      customType?: unknown;
+      data?: unknown;
+    };
+    if (
+      candidate.type === "custom" &&
+      candidate.customType === STATE_ENTRY &&
+      isComplexWorkState(candidate.data)
+    ) {
+      const timestamp = Date.parse(candidate.data.updatedAt);
+      if (timestamp >= lastTimestamp) {
+        states.push(candidate.data);
+        lastTimestamp = timestamp;
+      }
+    }
+  }
+  return states;
+}
+
+export function buildPhaseHistory(
+  states: readonly ComplexWorkState[],
+): PhaseHistory[] {
+  const history: PhaseHistory[] = [];
+  for (const state of states) {
+    const previous = history.at(-1);
+    if (previous?.phase === state.phase) continue;
+    if (previous) previous.endedAt = state.updatedAt;
+    history.push({ phase: state.phase, startedAt: state.updatedAt });
+  }
+  return history;
+}
+
+function formatDuration(startedAt: string, endedAt: string): string {
+  const milliseconds = Math.max(0, Date.parse(endedAt) - Date.parse(startedAt));
+  const seconds = Math.floor(milliseconds / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+export function formatComplexWorkStatus(
+  state: ComplexWorkState,
+  history: readonly PhaseHistory[],
+): string {
+  const lines = [
+    `Complex work: ${state.request}`,
+    `Current phase: ${state.phase}`,
+    `Mission: ${state.missionId ?? "none"}`,
+    `Next: ${state.expectedAction ?? actionForPhase(state.phase) ?? "await user decision"}`,
+    `Last updated: ${state.updatedAt}`,
+    "History:",
+    ...history.map(
+      (item) =>
+        `- ${item.phase}: ${item.endedAt ? formatDuration(item.startedAt, item.endedAt) : `current since ${item.startedAt}`}`,
+    ),
+  ];
+  return lines.join("\n");
+}
+
+class ComplexWorkStatusPopup {
+  private offset = 0;
+  private readonly text: string;
+  private readonly done: () => void;
+  private readonly requestRender: () => void;
+
+  constructor(text: string, done: () => void, requestRender: () => void) {
+    this.text = text;
+    this.done = done;
+    this.requestRender = requestRender;
+  }
+  handleInput(data: string): void {
+    if (
+      matchesKey(data, Key.escape) ||
+      matchesKey(data, Key.enter) ||
+      data === "q"
+    )
+      this.done();
+    else if (matchesKey(data, Key.up))
+      this.offset = Math.max(0, this.offset - 1);
+    else if (matchesKey(data, Key.down)) {
+      this.offset = Math.min(
+        this.offset + 1,
+        Math.max(0, this.text.split("\n").length - 12),
+      );
+    }
+    this.requestRender();
+  }
+  render(width: number): string[] {
+    const content = this.text.split("\n");
+    const visible = content.slice(this.offset, this.offset + 12);
+    return [
+      truncateToWidth(
+        "┌─ Complex Work Status ─────────────────────────",
+        width,
+      ),
+      ...visible.map((line) => truncateToWidth(`│ ${line}`, width)),
+      truncateToWidth("└─ ↑↓ history • Enter/Esc/q close ─────────────", width),
+    ];
+  }
+  invalidate(): void {}
+}
 
 function now(): string {
   return new Date().toISOString();
@@ -433,6 +595,34 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
           );
           return Promise.resolve();
         }
+        if (action === "status") {
+          const history = buildPhaseHistory(
+            replayComplexWorkStates(ctx.sessionManager.getBranch()),
+          );
+          const text = formatComplexWorkStatus(state, history);
+          if (ctx.mode !== "tui") {
+            ctx.ui.notify(text, "info");
+            return Promise.resolve();
+          }
+          return ctx.ui.custom<void>(
+            (tui, _theme, _keybindings, done) =>
+              new ComplexWorkStatusPopup(
+                text,
+                () => done(),
+                () => tui.requestRender(),
+              ),
+            {
+              overlay: true,
+              overlayOptions: {
+                width: "70%",
+                minWidth: 40,
+                maxHeight: "80%",
+                anchor: "center",
+                margin: 1,
+              },
+            },
+          );
+        }
         pi.sendUserMessage(
           `Call ${CONTROL_TOOL} with action "${action}". Follow its returned instructions exactly and do not authorize the same transition twice.`,
         );
@@ -443,11 +633,8 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", (_event, ctx) => {
     const entries = ctx.sessionManager.getBranch();
-    for (const entry of entries) {
-      if (entry.type === "custom" && entry.customType === STATE_ENTRY) {
-        state = entry.data as ComplexWorkState;
-      }
-    }
+    const replayed = replayComplexWorkStates(entries);
+    state = replayed.at(-1);
     isRootSession = Boolean(
       state?.rootSessionFile &&
         state.rootSessionFile === ctx.sessionManager.getSessionFile(),
