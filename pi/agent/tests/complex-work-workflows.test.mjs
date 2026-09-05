@@ -1,555 +1,141 @@
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { readdir } from "node:fs/promises";
-import test from "node:test";
+// Repository-level integration tests use real Git snapshots, command processes, and patch delivery.
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { git, createWorkspace, createCheckout, checkpoint, assertScope, integrationCandidate, adopt, deliver, head } from '../lib/complex-work/git.ts';
+import { writablePath } from '../lib/complex-work/child.ts';
+import { durableCheck } from '../lib/complex-work/checks.ts';
+import { runLocal } from '../lib/complex-work/engine.ts';
+import { freshTask, DEFAULT_POLICY } from '../lib/complex-work/state.ts';
+import { plan, task, check } from './complex-work-fixtures.mjs';
 
-const workflowDirectory = new URL("../workflows/", import.meta.url);
-const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-
-async function loadWorkflow(name) {
-  const source = await readFile(new URL(name, workflowDirectory), "utf8");
-  return new AsyncFunction("runs", "state", source);
+async function repo(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'complex-git-'));
+  const source = path.join(root, 'source'); await mkdir(source);
+  await git(source, ['init', '-b', 'main']);
+  await writeFile(path.join(source, '.gitignore'), 'target/\nnode_modules/\n');
+  await mkdir(path.join(source, 'src')); await writeFile(path.join(source, 'src/a.ts'), 'old\n');
+  await writeFile(path.join(source, 'src/b.ts'), 'original b\n');
+  await git(source, ['add', '.']); await git(source, ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-m', 'Initial']);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  return { root, source };
 }
-
-function fixturePlan() {
-  return {
-    waves: [
-      {
-        id: "wave-1",
-        dependsOn: [],
-        parallel: false,
-        lanes: [
-          {
-            id: "editor-ui",
-            objective: "Implement the editor UI change",
-            scope: ["docs/tasks/planner-selected.md", "src/editor-ui.rs"],
-            claimedFilesOrContracts: [],
-            dependencies: [],
-            isolation: "shared",
-            acceptanceCriteria: [],
-            focusedChecks: [],
-            stopConditions: [],
-          },
-        ],
-      },
-    ],
-  };
-}
-
-function fixtureState(overrides = {}) {
-  return {
-    plan: fixturePlan(),
-    completedWaveIds: [],
-    pendingIntegration: null,
-    pendingReview: null,
-    ...overrides,
-  };
-}
-
-function stateHarness(initialState) {
-  let current = initialState;
-  const writes = [];
-  return {
-    state: {
-      async get(key) {
-        assert.equal(key, "complexWork");
-        return current;
-      },
-      async set(key, value) {
-        assert.equal(key, "complexWork");
-        current = value;
-        writes.push(value);
-      },
-    },
-    current: () => current,
-    writes,
-  };
-}
-
-test("all workflow scripts parse in the workflow async-function environment", async () => {
-  const names = (await readdir(workflowDirectory)).filter((name) =>
-    name.endsWith(".js"),
-  );
-  for (const name of names) await loadWorkflow(name);
+const resources = [{ kind: 'directory', name: 'src', access: 'write' }];
+test('dirty input snapshot preserves source HEAD, index and untracked work', async t => {
+  const { root, source } = await repo(t);
+  await writeFile(path.join(source, 'src/a.ts'), 'staged\n'); await git(source, ['add', 'src/a.ts']);
+  await writeFile(path.join(source, 'src/a.ts'), 'unstaged\n'); await writeFile(path.join(source, 'new.txt'), 'untracked\n');
+  const beforeHead = await head(source); const beforeIndex = await git(source, ['diff', '--cached']);
+  const workspace = await createWorkspace(source, path.join(root, 'mission'));
+  assert.equal(await readFile(path.join(workspace.repo, 'src/a.ts'), 'utf8'), 'unstaged\n');
+  assert.equal(await readFile(path.join(workspace.repo, 'new.txt'), 'utf8'), 'untracked\n');
+  assert.equal(await head(source), beforeHead); assert.equal(await git(source, ['diff', '--cached']), beforeIndex);
+});
+test('dependent checkout starts from integrated checkpoint and delivery preserves unrelated changes', async t => {
+  const { root, source } = await repo(t);
+  const workspace = await createWorkspace(source, path.join(root, 'mission'));
+  const first = await createCheckout(workspace, 'first', workspace.head);
+  await writeFile(path.join(first, 'src/a.ts'), 'implemented a\n');
+  const candidate = await checkpoint(first, 'first');
+  const integration = await integrationCandidate(workspace, 'integrate-first', { cwd: first, base: workspace.head, candidate });
+  const integrated = await checkpoint(integration, 'integrated'); await adopt(workspace, integration, integrated); workspace.head = integrated;
+  const second = await createCheckout(workspace, 'second', workspace.head);
+  assert.equal(await readFile(path.join(second, 'src/a.ts'), 'utf8'), 'implemented a\n');
+  await writeFile(path.join(source, 'src/b.ts'), 'user edit\n');
+  const beforeIndex = await git(source, ['diff', '--cached']);
+  await deliver(workspace); await deliver(workspace);
+  assert.equal(await readFile(path.join(source, 'src/a.ts'), 'utf8'), 'implemented a\n');
+  assert.equal(await readFile(path.join(source, 'src/b.ts'), 'utf8'), 'user edit\n');
+  assert.equal(await git(source, ['diff', '--cached']), beforeIndex);
+});
+test('out-of-scope patch and concurrent source modification fail closed', async t => {
+  const { root, source } = await repo(t);
+  const workspace = await createWorkspace(source, path.join(root, 'mission'));
+  const lane = await createCheckout(workspace, 'lane', workspace.head);
+  await writeFile(path.join(lane, 'outside.txt'), 'outside');
+  const bad = await checkpoint(lane, 'bad');
+  await assert.rejects(assertScope(lane, workspace.head, bad, resources, 'docs/tasks/record.md'), /outside approved scope/);
+  await writeFile(path.join(workspace.repo, 'src/a.ts'), 'agent edit\n'); workspace.head = await checkpoint(workspace.repo, 'changed');
+  await writeFile(path.join(source, 'src/a.ts'), 'concurrent edit\n');
+  await assert.rejects(deliver(workspace), /conflicts/);
+  assert.equal(await readFile(path.join(source, 'src/a.ts'), 'utf8'), 'concurrent edit\n');
+});
+test('writer path boundary rejects parent escape, symlink traversal, and read-only roles', async t => {
+  const { root, source } = await repo(t);
+  const contract = { cwd: source, role: 'writer', resources };
+  await assert.rejects(writablePath(contract, '../outside'), /scope/);
+  await symlink(root, path.join(source, 'src/link'));
+  await assert.rejects(writablePath(contract, 'src/link/escaped'), /Symlink/);
+  await assert.rejects(writablePath({ ...contract, role: 'reviewer' }, 'src/a.ts'), /scope/);
+  assert.equal(await writablePath(contract, 'src/a.ts'), path.join(source, 'src/a.ts'));
+});
+test('durable check executes once across concurrent observers and records a real failure', async t => {
+  const { root, source } = await repo(t);
+  const counter = path.join(source, 'count');
+  const command = { ...check, args: ['-e', 'require("fs").appendFileSync(process.argv[1],"x")', counter] };
+  const signal = new AbortController().signal;
+  const results = await Promise.all([durableCheck(command, source, path.join(root, 'evidence'), signal), durableCheck(command, source, path.join(root, 'evidence'), signal)]);
+  assert.ok(results.every(result => result.code === 0)); assert.equal(await readFile(counter, 'utf8'), 'x');
+  await durableCheck(command, source, path.join(root, 'evidence'), signal);
+  assert.equal(await readFile(counter, 'utf8'), 'x');
+  const failed = await durableCheck({ ...check, args: ['-e', 'process.exit(7)'] }, source, path.join(root, 'failure'), signal);
+  assert.equal(failed.code, 7);
+});
+test('real local validation records acceptance evidence and integration stays clean for the next task', async t => {
+  const { root, source } = await repo(t);
+  const workspace = await createWorkspace(source, path.join(root, 'mission'));
+  const cwd = await createCheckout(workspace, 'writer', workspace.head);
+  await writeFile(path.join(cwd, 'src/a.ts'), 'implemented\n');
+  const state = { id: 'test-mission', revision: 1, workspace, plan: plan(), policy: DEFAULT_POLICY, tasks: { a: { ...freshTask(), cwd, base: workspace.head, scout: 'src/a.ts is the seam' } } };
+  const job = { id: 'validation', kind: 'validate', taskId: 'a', cwd, receipt: path.join(root, 'validate.json') };
+  const result = await runLocal(state, job, new AbortController().signal);
+  assert.equal(result.checks[0].code, 0);
+  Object.assign(state.tasks.a, { candidate: result.candidate, checks: result.checks });
+  const integrated = await runLocal(state, { ...job, id: 'integration', kind: 'integrate', receipt: path.join(root, 'integration.json') }, new AbortController().signal);
+  state.workspace.head = integrated.head;
+  assert.equal((await git(workspace.repo, ['status', '--porcelain'])).trim(), '');
+  assert.equal(await readFile(path.join(workspace.repo, 'src/a.ts'), 'utf8'), 'implemented\n');
 });
 
-test("execution uses one outer worktree and one canonical task record", async () => {
-  const harness = stateHarness(fixtureState());
-  let invocation;
-  const runs = {
-    async run(_key, options) {
-      invocation = options;
-      return {
-        runId: "lane-run",
-        ok: true,
-        output: "handoff",
-        structuredOutput: {
-          status: "accepted",
-          summary: "implemented",
-          taskRecord: "docs/tasks/wave-1-editor-ui.md",
-          changedFiles: ["src/editor-ui.rs"],
-          checks: ["focused checks passed"],
-          blockers: [],
-          nestedWriterComplete: true,
-        },
-        artifactPaths: ["patch"],
-      };
-    },
-    async all() {
-      throw new Error("serial fixture must not use runs.all");
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "integration-required");
-  assert.equal(invocation.worktree, true);
-  assert.match(invocation.task, /set worktree: false/);
-  assert.match(
-    invocation.task,
-    /must not target the original repository checkout/,
-  );
-
-  const directive = JSON.parse(invocation.task.split("Lane directive:\n")[1]);
-  assert.deepEqual(directive.scope, [
-    "src/editor-ui.rs",
-    "docs/tasks/wave-1-editor-ui.md",
-  ]);
-  assert.equal(directive.taskRecord, "docs/tasks/wave-1-editor-ui.md");
-  assert.ok(harness.current().pendingIntegration);
-  assert.equal(harness.current().activeExecution, null);
+test('input snapshot respects repository-local excludes and rejects recursive storage', async t => {
+  const { root, source } = await repo(t);
+  await writeFile(path.join(source, '.git/info/exclude'), 'private.txt\n');
+  await writeFile(path.join(source, 'private.txt'), 'excluded');
+  const workspace = await createWorkspace(source, path.join(root, 'mission'));
+  await assert.rejects(readFile(path.join(workspace.repo, 'private.txt')), /ENOENT/);
+  await assert.rejects(createWorkspace(source, path.join(source, 'mission')), /outside the source/);
 });
 
-test("independent ready waves are dispatched in one parallel batch", async () => {
-  const parallelPlan = {
-    waves: [
-      {
-        id: "wave-a",
-        dependsOn: [],
-        parallel: false,
-        lanes: [
-          {
-            ...fixturePlan().waves[0].lanes[0],
-            id: "lane-a",
-            scope: ["src/a.rs"],
-            isolation: "worktree",
-          },
-        ],
-      },
-      {
-        id: "wave-b",
-        dependsOn: [],
-        parallel: false,
-        lanes: [
-          {
-            ...fixturePlan().waves[0].lanes[0],
-            id: "lane-b",
-            scope: ["src/b.rs"],
-            isolation: "worktree",
-          },
-        ],
-      },
-    ],
-  };
-  const harness = stateHarness(fixtureState({ plan: parallelPlan }));
-  let invocations;
-  const runs = {
-    async all(items) {
-      invocations = items;
-      return items.map((item) => {
-        const taskRecord = item.task.match(/docs\/tasks\/[^ ]+\.md/)[0];
-        return {
-          runId: item.key,
-          ok: true,
-          output: "implemented",
-          structuredOutput: {
-            status: "accepted",
-            summary: "implemented",
-            taskRecord,
-            changedFiles: [taskRecord.replace("docs/tasks/", "src/")],
-            checks: ["passed"],
-            blockers: [],
-            nestedWriterComplete: true,
-          },
-          artifactPaths: [item.key + ".patch"],
-        };
-      });
-    },
-    async run() {
-      throw new Error("independent ready waves must use runs.all");
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(invocations.length, 2);
-  assert.deepEqual(result.wave.sourceWaveIds, ["wave-a", "wave-b"]);
-  assert.deepEqual(
-    result.laneResults.map(({ waveId }) => waveId),
-    ["wave-a", "wave-b"],
-  );
-  assert.ok(invocations.every(({ worktree }) => worktree));
+test('final checks that modify source cannot alter the integration baseline', async t => {
+  const { root, source } = await repo(t);
+  const workspace = await createWorkspace(source, path.join(root, 'mission'));
+  const value = plan(); value.finalChecks = [{ ...check, args: ['-e', 'require("fs").writeFileSync("src/a.ts","bad")'] }];
+  const state = { workspace, plan: value };
+  const job = { id: 'final', kind: 'final-check', receipt: path.join(root, 'final.json') };
+  await assert.rejects(runLocal(state, job, new AbortController().signal), /changed source/);
+  assert.equal(await readFile(path.join(workspace.repo, 'src/a.ts'), 'utf8'), 'old\n');
+  assert.equal(await head(workspace.repo), workspace.head);
+});
+test('one mission admits only one live controller lease', async t => {
+  const { root } = await repo(t);
+  const { acquireMissionLease } = await import('../lib/complex-work/store.ts');
+  const state = { workspace: { root } };
+  const release = await acquireMissionLease(state);
+  await assert.rejects(acquireMissionLease(state), /live controller/);
+  await release();
+  const next = await acquireMissionLease(state); await next();
 });
 
-test("resource-conflicting ready waves are serialized", async () => {
-  const sharedLane = fixturePlan().waves[0].lanes[0];
-  const conflictingPlan = {
-    waves: [
-      {
-        id: "wave-a",
-        dependsOn: [],
-        parallel: false,
-        lanes: [{ ...sharedLane, id: "lane-a", scope: ["src/shared.rs"] }],
-      },
-      {
-        id: "wave-b",
-        dependsOn: [],
-        parallel: false,
-        lanes: [{ ...sharedLane, id: "lane-b", scope: ["src/shared.rs"] }],
-      },
-    ],
-  };
-  const harness = stateHarness(fixtureState({ plan: conflictingPlan }));
-  const runs = {
-    async run(_key, options) {
-      const taskRecord = options.task.match(/docs\/tasks\/[^ ]+\.md/)[0];
-      return {
-        runId: "one-lane",
-        ok: true,
-        output: "implemented",
-        structuredOutput: {
-          status: "accepted",
-          summary: "implemented",
-          taskRecord,
-          changedFiles: ["src/shared.rs"],
-          checks: ["passed"],
-          blockers: [],
-          nestedWriterComplete: true,
-        },
-      };
-    },
-    async all() {
-      throw new Error("conflicting waves must not run concurrently");
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
-    runs,
-    harness.state,
-  );
-  assert.deepEqual(result.wave.sourceWaveIds, ["wave-a"]);
-});
-
-test("failed lane results cannot become integration candidates", async () => {
-  const harness = stateHarness(fixtureState());
-  const runs = {
-    async run() {
-      return {
-        runId: "failed-lane",
-        ok: false,
-        output: "blocked",
-        artifactPaths: [],
-      };
-    },
-    async all() {
-      throw new Error("serial fixture must not use runs.all");
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "execution-blocked");
-  assert.equal(harness.current().pendingIntegration, null);
-  assert.equal(harness.current().failedExecution.laneResults[0].ok, false);
-});
-
-test("semantically blocked lane cannot become an integration candidate", async () => {
-  const harness = stateHarness(fixtureState());
-  const runs = {
-    async run() {
-      return {
-        runId: "completed-but-blocked",
-        ok: true,
-        output: "process completed",
-        structuredOutput: {
-          status: "blocked",
-          summary: "nested writer is still active",
-          taskRecord: "docs/tasks/wave-1-editor-ui.md",
-          changedFiles: ["src/editor-ui.rs"],
-          checks: [],
-          blockers: ["nested writer incomplete"],
-          nestedWriterComplete: false,
-        },
-        artifactPaths: ["partial.patch"],
-      };
-    },
-    async all() {
-      throw new Error("serial fixture must not use runs.all");
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "execution-blocked");
-  assert.equal(harness.current().pendingIntegration, null);
-});
-
-test("integration prose cannot override a structured blocked result", async () => {
-  const harness = stateHarness(
-    fixtureState({
-      pendingIntegration: {
-        wave: fixturePlan().waves[0],
-        laneResults: [],
-      },
-    }),
-  );
-  const runs = {
-    async run() {
-      return {
-        runId: "integration-run",
-        ok: true,
-        output: "Everything completed",
-        structuredOutput: {
-          status: "blocked",
-          summary: "no candidate was applied",
-          appliedArtifacts: [],
-          changedFiles: [],
-          taskRecords: [],
-          checks: [],
-          blockers: ["missing patch"],
-        },
-      };
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-integrate-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "integration-failed");
-  assert.equal(harness.current().pendingReview, null);
-  assert.equal(
-    harness.current().failedIntegration.structuredOutput.status,
-    "blocked",
-  );
-});
-
-test("blocking review returns a user decision gate", async () => {
-  const harness = stateHarness(
-    fixtureState({
-      pendingReview: {
-        wave: fixturePlan().waves[0],
-        integration: { output: "integrated" },
-      },
-    }),
-  );
-  const runs = {
-    async all(invocations) {
-      assert.equal(invocations.length, 3);
-      return invocations.map((_, index) => ({
-        runId: `review-${index}`,
-        ok: true,
-        output: "review completed",
-        structuredOutput: {
-          verdict: index === 0 ? "block" : "pass",
-          findings:
-            index === 0
-              ? [
-                  {
-                    severity: "P1",
-                    summary: "design decision required",
-                    evidence: "src/editor-ui.rs:10",
-                    solutionKnown: false,
-                    suggestedCorrection: "return to planning",
-                  },
-                ]
-              : [],
-          validation: [],
-          residualGaps: [],
-        },
-      }));
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-review-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "review-decision-required");
-  assert.equal(
-    harness.current().pendingReview.reviewVerdict,
-    "decision-required",
-  );
-});
-
-test("contradictory passing review with unresolved finding requires a user decision", async () => {
-  const harness = stateHarness(
-    fixtureState({
-      pendingReview: {
-        wave: fixturePlan().waves[0],
-        integration: { output: "integrated" },
-      },
-    }),
-  );
-  const runs = {
-    async all(invocations) {
-      return invocations.map((_, index) => ({
-        runId: `review-${index}`,
-        ok: true,
-        structuredOutput: {
-          verdict: "pass",
-          findings:
-            index === 0
-              ? [
-                  {
-                    severity: "P1",
-                    summary: "unresolved architecture choice",
-                    evidence: "src/editor-ui.rs:20",
-                    solutionKnown: false,
-                    suggestedCorrection: "ask the user",
-                  },
-                ]
-              : [],
-          validation: [],
-          residualGaps: [],
-        },
-      }));
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-review-wave.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "review-decision-required");
-});
-
-test("planning compatibility wrapper requires persisted research", async () => {
-  const harness = stateHarness(fixtureState({ researchBrief: undefined }));
-  await assert.rejects(
-    (await loadWorkflow("complex-work-plan.js"))(
-      { async run() {} },
-      harness.state,
-    ),
-    /authoritative research brief/,
-  );
-});
-
-test("planning compatibility wrapper returns ordinary Markdown", async () => {
-  const harness = stateHarness(
-    fixtureState({
-      researchBrief: {
-        summary: "researched",
-        evidence: ["src/editor-ui.rs"],
-        constraints: ["preserve behavior"],
-        unresolvedDecisions: [],
-      },
-    }),
-  );
-  let invocation;
-  const runs = {
-    async run(_key, options) {
-      invocation = options;
-      return {
-        ok: true,
-        output: "# Plan\n\nOne serial wave.",
-        runId: "plan-run",
-      };
-    },
-  };
-
-  const result = await (await loadWorkflow("complex-work-plan.js"))(
-    runs,
-    harness.state,
-  );
-
-  assert.equal(result.status, "plan-draft");
-  assert.equal(result.planMarkdown, "# Plan\n\nOne serial wave.");
-  assert.equal(invocation.outputSchema, undefined);
-  assert.match(invocation.task, /Authoritative research brief/);
-  assert.equal(harness.writes.length, 0);
-});
-
-test("planning compatibility wrapper includes correction evidence", async () => {
-  const harness = stateHarness(
-    fixtureState({
-      researchBrief: {
-        summary: "researched",
-        evidence: ["src/editor-ui.rs"],
-        constraints: [],
-        unresolvedDecisions: [],
-      },
-      failedIntegration: { blockers: ["must redesign branch ownership"] },
-    }),
-  );
-  let plannerTask = "";
-  const runs = {
-    async run(_key, options) {
-      plannerTask = options.task;
-      return { ok: true, output: "corrected plan", runId: "plan-run" };
-    },
-  };
-
-  await (await loadWorkflow("complex-work-plan.js"))(runs, harness.state);
-  assert.match(plannerTask, /must redesign branch ownership/);
-});
-
-test("verification and closure complete every source wave in a batch", async () => {
-  const batchWave = {
-    id: "batch-wave-a--wave-b",
-    sourceWaveIds: ["wave-a", "wave-b"],
-  };
-  const harness = stateHarness(
-    fixtureState({
-      pendingReview: {
-        wave: batchWave,
-        reviewFindings: [],
-        reviewVerdict: "passed",
-      },
-    }),
-  );
-
-  const verification = await (
-    await loadWorkflow("complex-work-verify-wave.js")
-  )({}, harness.state);
-  assert.deepEqual(verification.waveIds, ["wave-a", "wave-b"]);
-  const closure = await (
-    await loadWorkflow("complex-work-close-wave.js")
-  )({}, harness.state);
-  assert.deepEqual(closure.completedWaveIds, ["wave-a", "wave-b"]);
-  assert.deepEqual(harness.current().completedWaveIds, ["wave-a", "wave-b"]);
-});
-
-test("thrown lane failures leave a durable failed execution checkpoint", async () => {
-  const harness = stateHarness(fixtureState());
-  const runs = {
-    async run() {
-      throw new Error("lane crashed");
-    },
-    async all() {
-      throw new Error("serial fixture must not use runs.all");
-    },
-  };
-
-  await assert.rejects(
-    (await loadWorkflow("complex-work-execute-wave.js"))(runs, harness.state),
-    /lane crashed/,
-  );
-  assert.equal(harness.current().activeExecution.status, "failed");
-  assert.match(harness.current().activeExecution.error, /lane crashed/);
+test('durable supervisors enforce timeout and cancellation of command groups', async t => {
+  const { root, source } = await repo(t);
+  const slow = { ...check, timeoutMs: 1000, args: ['-e', 'setInterval(()=>{},100)'] };
+  const timed = await durableCheck(slow, source, path.join(root, 'timeout'), new AbortController().signal);
+  assert.equal(timed.timedOut, true); assert.notEqual(timed.code, 0);
+  const controller = new AbortController();
+  const pending = durableCheck({ ...slow, timeoutMs: 3000 }, source, path.join(root, 'cancel'), controller.signal);
+  setTimeout(() => controller.abort(), 50);
+  const cancelled = await pending;
+  assert.equal(cancelled.cancelled, true); assert.notEqual(cancelled.code, 0);
 });

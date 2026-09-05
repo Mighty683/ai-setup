@@ -51,15 +51,11 @@ For substantial implementation:
 /complex-work <request>
 ```
 
-The extension command enables `complex_work_control` only for the active session. That tool exposes and gates the one valid workflow transition; direct out-of-order complex-work workflow launches are blocked. It gathers evidence, creates a dependency and conflict graph, publishes a lane board and parallelism audit, then waits for `GO` before mutation unless the request explicitly authorizes continuous execution.
+The controller researches and compiles a task graph, then presents a revision for approval. Use `/complex-work-go <revision>` to authorize its scope and operating policy. Independent tasks run in private checkouts through focused research, implementation, checks, review, and integration. The default policy continues without per-task approval; `/complex-work-verify <revision>` applies the final reviewed patch.
 
-Every lane maintains `docs/tasks/<wave>-<lane>.md` with a description, research summary, and `todo`/`started`/`finished` status. Each wave must leave the application runnable, is reviewed, and requires explicit user verification before closing.
+Use `/complex-work-status`, `/complex-work-pause`, `/complex-work-resume`, `/complex-work-steer`, `/complex-work-retry`, `/complex-work-replan`, and `/complex-work-cancel` for control. `/complex-work-policy {"checkpoints":"task"}` enables approval before each task's integration. The model-facing control tool only reads status.
 
-Use `/complex-work-status`, `/complex-work-go`, `/complex-work-verify`, `/complex-work-replan`, `/complex-work-finish`, or `/complex-work-abandon` to steer common transitions. Phase-specific commands also exist for `plan`, `execute`, `integrate`, `review`, `close`, and `retry-plan`; each routes through the same gated control tool rather than bypassing workflow validation.
-
-The complex-work extension plays an attention sound only when the workflow reaches a user-owned gate: plan approval, blocking-review disposition, explicit verification, or approval of the next wave. Set `PI_SOUND_DISABLED=1` to disable it.
-
-The workflow uses `workflowScript`; do not create durable `.chain.md` files. They are a legacy inspection format, not the current execution surface.
+See [architecture, controls and limits](../../docs/complex-work.md). The old wave scripts and `finish`/`abandon` phase commands are retired. Runtime roles are registered by the extension and cannot delegate. Set `PI_SOUND_DISABLED=1` to disable attention bells.
 
 ## 6. Secrets
 

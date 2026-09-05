@@ -1,98 +1,29 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { compileImplementationPlan, validateImplementationPlan, resourcesConflict, safePath } from '../lib/complex-work-contracts.ts';
+import { plan, task, markdown } from './complex-work-fixtures.mjs';
 
-const {
-  compileImplementationPlan,
-  compileResearchBrief,
-  validateImplementationPlan,
-} = await import("../lib/complex-work-contracts.ts");
-
-function lane(id, scope, isolation = "worktree") {
-  return {
-    id,
-    objective: `MODEL: openai-codex/gpt-5.6-luna; RATIONALE: bounded; ${id}`,
-    scope,
-    claimedFilesOrContracts: [],
-    dependencies: [],
-    isolation,
-    acceptanceCriteria: [],
-    focusedChecks: [],
-    stopConditions: [],
-  };
-}
-
-function plan(waves) {
-  return {
-    objective: "Implement safely",
-    nonGoals: [],
-    constraints: [],
-    acceptanceCriteria: [],
-    userDecisions: [],
-    reviewResponse: [],
-    waves,
-  };
-}
-
-function markdown(value) {
-  return `# Auditable prose\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\``;
-}
-
-test("research compiler accepts ordinary Markdown with a final JSON record", () => {
-  const brief = {
-    summary: "Evidence synthesized",
-    evidence: ["src/controller.ts:42"],
-    constraints: [],
-    unresolvedDecisions: [],
-    resolvedDecisions: [],
-  };
-  assert.deepEqual(compileResearchBrief(markdown(brief)), {
-    ok: true,
-    value: brief,
-  });
+test('task graph rejects cycles, missing dependencies, and unassigned criteria', () => {
+  assert.match(validateImplementationPlan(plan([task('a', ['b']), task('b', ['a'])])).errors.join('\n'), /cycle/);
+  assert.match(validateImplementationPlan(plan([task('a', ['missing'])])).errors.join('\n'), /unknown dependency/);
+  const value = plan(); value.acceptanceCriteria.push({ id: 'missing', description: 'Unassigned' });
+  assert.match(validateImplementationPlan(value).errors.join('\n'), /Unassigned/);
 });
-
-test("plan compiler rejects missing deterministic interchange", () => {
-  const result = compileImplementationPlan("# Prose only");
-  assert.equal(result.ok, false);
-  assert.match(result.errors[0], /No fenced JSON/);
+test('final invalid JSON never falls back to an earlier valid plan', () => {
+  assert.equal(compileImplementationPlan(markdown(plan()) + '\n```json\n{invalid}\n```').ok, false);
+  assert.equal(compileImplementationPlan(markdown(plan())).ok, true);
 });
-
-test("plan validation rejects dependency cycles", () => {
-  const result = validateImplementationPlan(
-    plan([
-      {
-        id: "a",
-        dependsOn: ["b"],
-        parallel: false,
-        lanes: [lane("a-lane", ["src/a.ts"], "shared")],
-      },
-      {
-        id: "b",
-        dependsOn: ["a"],
-        parallel: false,
-        lanes: [lane("b-lane", ["src/b.ts"], "shared")],
-      },
-    ]),
-  );
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join("\n"), /cycle/);
+test('resource conflicts include directory containment and read/write contracts', () => {
+  const resource = (kind, name, access = 'write') => ({ kind, name, access });
+  assert.equal(resourcesConflict(resource('directory', 'src'), resource('file', 'src/file.ts')), true);
+  assert.equal(resourcesConflict(resource('directory', 'src'), resource('file', 'src-other/file.ts')), false);
+  assert.equal(resourcesConflict(resource('file', 'src/file.ts', 'read'), resource('file', 'src/file.ts', 'read')), false);
+  assert.equal(resourcesConflict(resource('contract', 'API'), resource('contract', 'API', 'read')), true);
 });
-
-test("parallel lanes must be isolated and claim disjoint resources", () => {
-  const result = validateImplementationPlan(
-    plan([
-      {
-        id: "parallel",
-        dependsOn: [],
-        parallel: true,
-        lanes: [
-          lane("left", ["src/shared.ts"], "shared"),
-          lane("right", ["src/shared.ts"]),
-        ],
-      },
-    ]),
-  );
-  assert.equal(result.ok, false);
-  assert.match(result.errors.join("\n"), /must use worktree isolation/);
-  assert.match(result.errors.join("\n"), /both claim src\/shared.ts/);
+test('unsafe paths, empty checks and unknown criteria are rejected', () => {
+  for (const file of ['/tmp/file', '../file', 'src/../file', 'src//file', 'src\\file', 'C:/file', '.git/config', '.pi/file', 'src/*']) assert.equal(safePath(file), false, file);
+  const value = plan(); value.tasks[0].checks = [];
+  assert.equal(validateImplementationPlan(value).ok, false);
+  value.tasks[0] = task('a'); value.tasks[0].criteria = ['unknown'];
+  assert.match(validateImplementationPlan(value).errors.join('\n'), /unknown criterion/);
 });
