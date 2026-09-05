@@ -8,6 +8,7 @@ function extensionHarness() {
   const commands = new Map();
   const tools = new Map();
   const entries = [];
+  const userMessages = [];
   let activeTools = ["subagent"];
 
   const pi = {
@@ -29,12 +30,14 @@ function extensionHarness() {
     registerTool(definition) {
       tools.set(definition.name, definition);
     },
-    sendUserMessage() {},
+    sendUserMessage(content) {
+      userMessages.push(content);
+    },
     setSessionName() {},
   };
 
   complexWorkExtension(pi);
-  return { handlers, commands, tools, entries };
+  return { handlers, commands, tools, entries, userMessages };
 }
 
 function commandContext() {
@@ -47,6 +50,22 @@ function commandContext() {
     ui: { notify() {} },
   };
 }
+
+test("steering commands route through the gated control tool", async () => {
+  const harness = extensionHarness();
+  await harness.commands
+    .get("complex-work")
+    .handler("review loop", commandContext());
+
+  await harness.commands
+    .get("complex-work-abandon")
+    .handler("", commandContext());
+
+  assert.match(
+    harness.userMessages.at(-1),
+    /complex_work_control with action "abandon"/,
+  );
+});
 
 test("planning retry requires an explicitly recorded workflow failure", async () => {
   const harness = extensionHarness();

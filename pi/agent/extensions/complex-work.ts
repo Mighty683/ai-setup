@@ -188,7 +188,12 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
         };
       }
       if (action === "abandon" || action === "finish") {
-        state = { ...state, phase: "inactive", expectedAction: undefined, updatedAt: now() };
+        state = {
+          ...state,
+          phase: "inactive",
+          expectedAction: undefined,
+          updatedAt: now(),
+        };
         persist();
         disableControl();
         const message =
@@ -293,7 +298,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       }
       if (action === "complete") {
         let next: Phase | undefined;
-        let expectedStatus = completionStatuses[state.phase];
+        const expectedStatus = completionStatuses[state.phase];
         if (state.phase === "reviewing") {
           if (params.resultStatus === "review-passed") next = "verifying";
           else if (params.resultStatus === "review-decision-required") {
@@ -357,6 +362,40 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
       };
     },
   });
+
+  const steeringCommands = {
+    status: "Report the current complex-work phase",
+    plan: "Authorize and launch complex-work planning",
+    go: "Approve and launch the next complex-work execution wave",
+    execute: "Authorize and launch the current execution phase",
+    integrate: "Authorize and launch the current integration phase",
+    review: "Authorize and launch the current review phase",
+    verify: "Record explicit user verification for the reviewed wave",
+    close: "Authorize and launch the current close phase",
+    replan: "Authorize replanning after a blocking review",
+    "retry-plan": "Retry a previously failed planning workflow",
+    finish: "Finish the active complex-work session",
+    abandon: "Abandon the active complex-work session",
+  } as const;
+
+  for (const [action, description] of Object.entries(steeringCommands)) {
+    pi.registerCommand(`complex-work-${action}`, {
+      description,
+      handler: (_args, ctx) => {
+        if (!state || state.phase === "inactive" || !isRootSession) {
+          ctx.ui.notify(
+            "No active complex-work session in this root session.",
+            "error",
+          );
+          return Promise.resolve();
+        }
+        pi.sendUserMessage(
+          `Call ${CONTROL_TOOL} with action "${action}". Follow its returned instructions exactly and do not authorize the same transition twice.`,
+        );
+        return Promise.resolve();
+      },
+    });
+  }
 
   pi.on("session_start", (_event, ctx) => {
     const entries = ctx.sessionManager.getBranch();

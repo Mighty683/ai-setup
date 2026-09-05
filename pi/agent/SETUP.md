@@ -55,6 +55,8 @@ The extension command enables `complex_work_control` only for the active session
 
 Every lane maintains `docs/tasks/<wave>-<lane>.md` with a description, research summary, and `todo`/`started`/`finished` status. Each wave must leave the application runnable, is reviewed, and requires explicit user verification before closing.
 
+Use `/complex-work-status`, `/complex-work-go`, `/complex-work-verify`, `/complex-work-replan`, `/complex-work-finish`, or `/complex-work-abandon` to steer common transitions. Phase-specific commands also exist for `plan`, `execute`, `integrate`, `review`, `close`, and `retry-plan`; each routes through the same gated control tool rather than bypassing workflow validation.
+
 The workflow uses `workflowScript`; do not create durable `.chain.md` files. They are a legacy inspection format, not the current execution surface.
 
 ## 6. Secrets
