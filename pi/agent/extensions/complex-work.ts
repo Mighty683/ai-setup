@@ -61,6 +61,7 @@ type Phase =
   | "verifying"
   | "closing"
   | "awaiting-review-decision"
+  | "awaiting-integration-correction"
   | "inactive";
 
 const completionStatuses: Partial<Record<Phase, string>> = {
@@ -311,6 +312,9 @@ function describeState(state: ComplexWorkState): string {
   if (state.phase === "awaiting-review-decision") {
     return `Review found blocking or unresolved findings. Present them to the user and wait. The user may choose replan or abandon.${mission}`;
   }
+  if (state.phase === "awaiting-integration-correction") {
+    return `Integration could not safely apply the wave. Present its blockers, then choose replan or abandon.${mission}`;
+  }
   if (state.phase === "inactive") {
     return "No active complex-work session.";
   }
@@ -469,13 +473,16 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
     }
     if (action === "replan" || action === "retry-plan") {
       const isReviewReplan =
-        action === "replan" && state.phase === "awaiting-review-decision";
+        action === "replan" &&
+        (state.phase === "awaiting-review-decision" ||
+          state.phase === "awaiting-integration-correction");
+
       const isPlanningRetry =
         action === "retry-plan" && state.phase === "planning-failed";
       if (!isReviewReplan && !isPlanningRetry) {
         throw new Error(
           action === "replan"
-            ? "Replan is only valid after review requires a user decision."
+            ? "Replan is only valid after review or integration requires a user decision."
             : "retry-plan is only valid after plan-failed records an authorized planning workflow failure.",
         );
       }
@@ -503,6 +510,11 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
             "Refusing to advance reviewing: resultStatus must be review-passed or review-decision-required.",
           );
         }
+      } else if (
+        state.phase === "integrating" &&
+        params.resultStatus === "integration-failed"
+      ) {
+        next = "awaiting-integration-correction";
       } else {
         const nextPhase: Partial<Record<Phase, Phase>> = {
           executing: "integrating",
@@ -519,6 +531,7 @@ export default function complexWorkExtension(pi: ExtensionAPI) {
           );
         }
       }
+
       state = {
         ...state,
         phase: next,

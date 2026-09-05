@@ -1,13 +1,25 @@
 const previousWorkflowState = await state.get("complexWork");
-const revisionContext = previousWorkflowState?.pendingReview
+let correctionEvidence;
+if (previousWorkflowState?.pendingReview) {
+  correctionEvidence = {
+    kind: "review",
+    detail: previousWorkflowState.pendingReview
+  };
+} else if (previousWorkflowState?.failedIntegration) {
+  correctionEvidence = {
+    kind: "integration",
+    detail: previousWorkflowState.failedIntegration
+  };
+}
+const revisionContext = correctionEvidence
   ? [
-      "This is a replanning cycle after review could not approve the current wave.",
-      "Preserve completed waves and explicitly address every blocking review finding.",
-      "Previous plan and review evidence:",
+      `This is a replanning cycle after ${correctionEvidence.kind} could not approve the current wave.`,
+      "Preserve completed waves and explicitly address every recorded blocker.",
+      "Previous plan and correction evidence:",
       JSON.stringify({
         plan: previousWorkflowState.plan,
         completedWaveIds: previousWorkflowState.completedWaveIds || [],
-        pendingReview: previousWorkflowState.pendingReview
+        correctionEvidence
       })
     ].join("\n")
   : "This is the initial plan for the mission.";

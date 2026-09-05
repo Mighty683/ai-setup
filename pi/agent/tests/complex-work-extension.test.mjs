@@ -138,6 +138,48 @@ test("replanning launch cannot switch mission IDs", async () => {
   assert.match(blocked.reason, /mission-one/);
 });
 
+test("integration failure can return to replanning", async () => {
+  const harness = extensionHarness();
+  await harness.commands
+    .get("complex-work")
+    .handler("repair integration", commandContext());
+  const control = harness.tools.get("complex_work_control");
+
+  harness.handlers.get("tool_call")({
+    toolName: "subagent",
+    input: {
+      workflowScriptPath:
+        "/home/might/.pi/agent/workflows/complex-work-plan.js",
+    },
+  });
+  await control.execute("planned", {
+    action: "plan-complete",
+    missionId: "mission-one",
+  });
+  await control.execute("go", { action: "go" });
+  harness.handlers.get("tool_call")({
+    toolName: "subagent",
+    input: {
+      workflowScriptPath:
+        "/home/might/.pi/agent/workflows/complex-work-execute-wave.js",
+      missionId: "mission-one",
+    },
+  });
+  await control.execute("executed", {
+    action: "complete",
+    resultStatus: "integration-required",
+  });
+  const failed = await control.execute("integration", {
+    action: "complete",
+    resultStatus: "integration-failed",
+  });
+
+  assert.equal(failed.details.state.phase, "awaiting-integration-correction");
+  const replan = await control.execute("replan", { action: "replan" });
+  assert.equal(replan.details.state.phase, "planning");
+  assert.equal(replan.details.state.expectedAction, "plan");
+});
+
 test("replays valid chronological snapshots and coalesces phase durations", async () => {
   const {
     replayComplexWorkStates,
