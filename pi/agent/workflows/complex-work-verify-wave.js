@@ -7,10 +7,12 @@ if (workflowState.pendingReview.reviewVerdict !== "passed") {
 }
 
 const verifiedWave = workflowState.pendingReview.wave;
+const verifiedWaveIds = verifiedWave.sourceWaveIds || [verifiedWave.id];
 await state.set("complexWork", {
   ...workflowState,
   pendingUserVerification: {
-    waveId: verifiedWave.id,
+    batchId: verifiedWave.id,
+    waveIds: verifiedWaveIds,
     verifiedAt: new Date().toISOString(),
     note: "The parent launched this verification transition after explicit user verification."
   }
@@ -19,5 +21,6 @@ await state.set("complexWork", {
 return {
   status: "user-verification-recorded",
   wave: verifiedWave,
-  message: "User verification is recorded. The wave may now be closed."
+  waveIds: verifiedWaveIds,
+  message: "User verification is recorded. The execution batch may now be closed."
 };

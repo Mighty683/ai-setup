@@ -123,6 +123,129 @@ test("execution uses one outer worktree and one canonical task record", async ()
   assert.equal(harness.current().activeExecution, null);
 });
 
+test("independent ready waves are dispatched in one parallel batch", async () => {
+  const parallelPlan = {
+    waves: [
+      {
+        id: "wave-a",
+        dependsOn: [],
+        parallel: false,
+        lanes: [
+          {
+            ...fixturePlan().waves[0].lanes[0],
+            id: "lane-a",
+            scope: ["src/a.rs"],
+            isolation: "worktree",
+          },
+        ],
+      },
+      {
+        id: "wave-b",
+        dependsOn: [],
+        parallel: false,
+        lanes: [
+          {
+            ...fixturePlan().waves[0].lanes[0],
+            id: "lane-b",
+            scope: ["src/b.rs"],
+            isolation: "worktree",
+          },
+        ],
+      },
+    ],
+  };
+  const harness = stateHarness(fixtureState({ plan: parallelPlan }));
+  let invocations;
+  const runs = {
+    async all(items) {
+      invocations = items;
+      return items.map((item) => {
+        const taskRecord = item.task.match(/docs\/tasks\/[^ ]+\.md/)[0];
+        return {
+          runId: item.key,
+          ok: true,
+          output: "implemented",
+          structuredOutput: {
+            status: "accepted",
+            summary: "implemented",
+            taskRecord,
+            changedFiles: [taskRecord.replace("docs/tasks/", "src/")],
+            checks: ["passed"],
+            blockers: [],
+            nestedWriterComplete: true,
+          },
+          artifactPaths: [item.key + ".patch"],
+        };
+      });
+    },
+    async run() {
+      throw new Error("independent ready waves must use runs.all");
+    },
+  };
+
+  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
+    runs,
+    harness.state,
+  );
+
+  assert.equal(invocations.length, 2);
+  assert.deepEqual(result.wave.sourceWaveIds, ["wave-a", "wave-b"]);
+  assert.deepEqual(
+    result.laneResults.map(({ waveId }) => waveId),
+    ["wave-a", "wave-b"],
+  );
+  assert.ok(invocations.every(({ worktree }) => worktree));
+});
+
+test("resource-conflicting ready waves are serialized", async () => {
+  const sharedLane = fixturePlan().waves[0].lanes[0];
+  const conflictingPlan = {
+    waves: [
+      {
+        id: "wave-a",
+        dependsOn: [],
+        parallel: false,
+        lanes: [{ ...sharedLane, id: "lane-a", scope: ["src/shared.rs"] }],
+      },
+      {
+        id: "wave-b",
+        dependsOn: [],
+        parallel: false,
+        lanes: [{ ...sharedLane, id: "lane-b", scope: ["src/shared.rs"] }],
+      },
+    ],
+  };
+  const harness = stateHarness(fixtureState({ plan: conflictingPlan }));
+  const runs = {
+    async run(_key, options) {
+      const taskRecord = options.task.match(/docs\/tasks\/[^ ]+\.md/)[0];
+      return {
+        runId: "one-lane",
+        ok: true,
+        output: "implemented",
+        structuredOutput: {
+          status: "accepted",
+          summary: "implemented",
+          taskRecord,
+          changedFiles: ["src/shared.rs"],
+          checks: ["passed"],
+          blockers: [],
+          nestedWriterComplete: true,
+        },
+      };
+    },
+    async all() {
+      throw new Error("conflicting waves must not run concurrently");
+    },
+  };
+
+  const result = await (await loadWorkflow("complex-work-execute-wave.js"))(
+    runs,
+    harness.state,
+  );
+  assert.deepEqual(result.wave.sourceWaveIds, ["wave-a"]);
+});
+
 test("failed lane results cannot become integration candidates", async () => {
   const harness = stateHarness(fixtureState());
   const runs = {
@@ -316,147 +439,100 @@ test("contradictory passing review with unresolved finding requires a user decis
   assert.equal(result.status, "review-decision-required");
 });
 
-test("blocked review without findings synthesizes evidence that replanning must address", async () => {
-  const harness = stateHarness(
-    fixtureState({
-      pendingReview: {
-        wave: fixturePlan().waves[0],
-        integration: { output: "integrated" },
-      },
-    }),
-  );
-  const reviewRuns = {
-    async all(invocations) {
-      return invocations.map((_, index) => ({
-        runId: `empty-block-${index}`,
-        ok: true,
-        structuredOutput: {
-          verdict: index === 0 ? "block" : "pass",
-          findings: [],
-          validation: [],
-          residualGaps: [],
-        },
-      }));
-    },
-  };
-  await (await loadWorkflow("complex-work-review-wave.js"))(
-    reviewRuns,
-    harness.state,
-  );
-
-  const syntheticSummary =
-    harness.current().pendingReview.reviewFindings[0].structuredOutput
-      .findings[0].summary;
-  assert.match(
-    syntheticSummary,
-    /did not produce an approvable finding report/,
-  );
-
-  const planRuns = {
-    async run() {
-      return {
-        ok: true,
-        structuredOutput: { ...fixturePlan(), reviewResponse: [] },
-      };
-    },
-  };
+test("planning compatibility wrapper requires persisted research", async () => {
+  const harness = stateHarness(fixtureState({ researchBrief: undefined }));
   await assert.rejects(
-    (await loadWorkflow("complex-work-plan.js"))(planRuns, harness.state),
-    /did not produce an approvable finding report/,
+    (await loadWorkflow("complex-work-plan.js"))(
+      { async run() {} },
+      harness.state,
+    ),
+    /authoritative research brief/,
   );
 });
 
-test("replanning preserves completed waves and includes review evidence", async () => {
-  const blockingFinding = {
-    severity: "P1",
-    summary: "reviewed layout is unsafe",
-    evidence: "src/editor-ui.rs:10",
-    solutionKnown: false,
-    suggestedCorrection: "revise the layout plan",
-  };
-  const prior = fixtureState({
-    completedWaveIds: ["already-done"],
-    planRevision: 2,
-    pendingReview: {
-      wave: fixturePlan().waves[0],
-      reviewVerdict: "decision-required",
-      reviewFindings: [
-        {
-          structuredOutput: { verdict: "block", findings: [blockingFinding] },
-        },
-      ],
-    },
-  });
-  const harness = stateHarness(prior);
-  let plannerTask = "";
-  const replacementPlan = {
-    ...fixturePlan(),
-    reviewResponse: [
-      {
-        finding: blockingFinding.summary,
-        addressedByWaveIds: ["wave-1"],
-        rationale: "replacement wave addresses the rejected design",
+test("planning compatibility wrapper returns ordinary Markdown", async () => {
+  const harness = stateHarness(
+    fixtureState({
+      researchBrief: {
+        summary: "researched",
+        evidence: ["src/editor-ui.rs"],
+        constraints: ["preserve behavior"],
+        unresolvedDecisions: [],
       },
-    ],
+    }),
+  );
+  let invocation;
+  const runs = {
+    async run(_key, options) {
+      invocation = options;
+      return {
+        ok: true,
+        output: "# Plan\n\nOne serial wave.",
+        runId: "plan-run",
+      };
+    },
   };
+
+  const result = await (await loadWorkflow("complex-work-plan.js"))(
+    runs,
+    harness.state,
+  );
+
+  assert.equal(result.status, "plan-draft");
+  assert.equal(result.planMarkdown, "# Plan\n\nOne serial wave.");
+  assert.equal(invocation.outputSchema, undefined);
+  assert.match(invocation.task, /Authoritative research brief/);
+  assert.equal(harness.writes.length, 0);
+});
+
+test("planning compatibility wrapper includes correction evidence", async () => {
+  const harness = stateHarness(
+    fixtureState({
+      researchBrief: {
+        summary: "researched",
+        evidence: ["src/editor-ui.rs"],
+        constraints: [],
+        unresolvedDecisions: [],
+      },
+      failedIntegration: { blockers: ["must redesign branch ownership"] },
+    }),
+  );
+  let plannerTask = "";
   const runs = {
     async run(_key, options) {
       plannerTask = options.task;
-      return { ok: true, structuredOutput: replacementPlan };
+      return { ok: true, output: "corrected plan", runId: "plan-run" };
     },
   };
 
   await (await loadWorkflow("complex-work-plan.js"))(runs, harness.state);
-
-  assert.match(plannerTask, /replanning cycle/);
-  assert.match(plannerTask, /decision-required/);
-  assert.deepEqual(harness.current().completedWaveIds, ["already-done"]);
-  assert.equal(harness.current().planRevision, 3);
-  assert.equal(harness.current().pendingReview, null);
-  assert.equal(harness.current().reviewHistory.length, 1);
+  assert.match(plannerTask, /must redesign branch ownership/);
 });
 
-test("replanning rejects a plan that discards blocking review findings", async () => {
-  const prior = fixtureState({
-    pendingReview: {
-      wave: fixturePlan().waves[0],
-      reviewVerdict: "decision-required",
-      reviewFindings: [
-        {
-          structuredOutput: {
-            verdict: "block",
-            findings: [
-              {
-                severity: "P1",
-                summary: "must redesign branch ownership",
-                evidence: "src/editor-ui.rs:30",
-                solutionKnown: false,
-                suggestedCorrection: "replan",
-              },
-            ],
-          },
-        },
-      ],
-    },
-  });
-  const harness = stateHarness(prior);
-  const runs = {
-    async run() {
-      return {
-        ok: true,
-        structuredOutput: { ...fixturePlan(), reviewResponse: [] },
-      };
-    },
+test("verification and closure complete every source wave in a batch", async () => {
+  const batchWave = {
+    id: "batch-wave-a--wave-b",
+    sourceWaveIds: ["wave-a", "wave-b"],
   };
+  const harness = stateHarness(
+    fixtureState({
+      pendingReview: {
+        wave: batchWave,
+        reviewFindings: [],
+        reviewVerdict: "passed",
+      },
+    }),
+  );
 
-  await assert.rejects(
-    (await loadWorkflow("complex-work-plan.js"))(runs, harness.state),
-    /must redesign branch ownership/,
-  );
-  assert.equal(
-    harness.current().pendingReview.reviewVerdict,
-    "decision-required",
-  );
+  const verification = await (
+    await loadWorkflow("complex-work-verify-wave.js")
+  )({}, harness.state);
+  assert.deepEqual(verification.waveIds, ["wave-a", "wave-b"]);
+  const closure = await (
+    await loadWorkflow("complex-work-close-wave.js")
+  )({}, harness.state);
+  assert.deepEqual(closure.completedWaveIds, ["wave-a", "wave-b"]);
+  assert.deepEqual(harness.current().completedWaveIds, ["wave-a", "wave-b"]);
 });
 
 test("thrown lane failures leave a durable failed execution checkpoint", async () => {
