@@ -38,7 +38,7 @@
       }
     }
   },
-  "lastChangelogVersion": "0.85.0",
+  "lastChangelogVersion": "0.85.1",
   "enabledModels": [
     "gpt-6-astra",
     "gpt-5.6-sol",
