@@ -1,6 +1,8 @@
 allowBuilds:
+  '@ast-grep/cli': set this to true or false
   "@google/genai": true
   better-sqlite3: true
   esbuild: set this to true or false
   pi-gsd: true
   pi-lens: true
+  protobufjs: set this to true or false
