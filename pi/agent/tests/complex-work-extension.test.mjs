@@ -180,7 +180,8 @@ test("canonical commands and aliases use native async RPC with fresh context and
     assert.equal(launch.output, false);
     assert.match(launch.task, /REQUEST: Investigate the cache/);
     assert.match(launch.task, /Delegated research is read-only/);
-    assert.match(launch.task, /managed Git worktrees/);
+    assert.match(launch.task, /managed Git worktree/);
+    assert.match(launch.task, /one work-unit captain per wave/);
     assert.match(launch.task, /never blindly replace the dossier/);
     assert.match(h.messages.at(-1).content, /Do not autostart another stage/);
     assert.equal(h.messages.at(-1).display, false);
@@ -500,8 +501,10 @@ test("installed agent discovery resolves standalone artifact-writing profiles wi
     assert.equal(agent.subagentOnlyExtensions, undefined);
     if (name === "sergeant-unit") assert.ok(agent.tools.includes("bg_wait"));
     if (name === "work-unit") {
-      assert.match(agent.systemPrompt, /separate managed Git worktrees/);
-      assert.match(agent.systemPrompt, /one asynchronous `workflowScript`/);
+      assert.match(agent.systemPrompt, /act as its wave captain/);
+      assert.match(agent.systemPrompt, /same assigned worktree/);
+      assert.match(agent.systemPrompt, /one active mutation owner/);
+      assert.match(agent.systemPrompt, /explicitly hand the writer role/);
       assert.match(
         agent.systemPrompt,
         /never edit it; return completion comments/,
@@ -539,7 +542,9 @@ test("installed agent discovery resolves standalone artifact-writing profiles wi
         "acceptance criteria",
         "validation commands",
         "waves",
-        "managed Git worktrees",
+        "one managed Git worktree",
+        "wave captain",
+        "one active writer",
       ])
         assert.ok(agent.systemPrompt.includes(term), term);
     }
@@ -554,6 +559,9 @@ test("installed agent discovery resolves standalone artifact-writing profiles wi
         "runs.all",
         "bg_wait",
         "required descendant",
+        "one `work-unit` captain",
+        "Do not create a worktree per specialist",
+        "async: false",
       ])
         assert.ok(agent.systemPrompt.includes(term), term);
     }

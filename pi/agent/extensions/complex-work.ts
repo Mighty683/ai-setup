@@ -91,9 +91,9 @@ export default function complexWorkExtension(pi: ExtensionAPI): void {
             "Fresh session: no parent conversation is inherited. Use this request and the task file; clarify missing objectives or material ambiguity.",
             order,
             "Read the task file first if it exists. Create it if missing. Preserve existing sections and human edits; make targeted updates, never blindly replace the dossier. Edit only the assigned task file yourself; delegate implementation only for a sergeant order.",
-            "The top-level unit uses the current checkout. Give every child a complete cold-start packet and fresh context. Keep one writer per cwd/worktree. A sergeant may parallelize independent mutation lanes only in separate managed Git worktrees from a clean committed baseline; serialize shared-checkout, overlapping, and dependent changes. Parallelize read-only research/review and collect all required results before writing the dossier. Delegated research is read-only.",
+            "The top-level unit uses the current checkout. Give every child a complete cold-start packet and fresh context. Keep one active mutation owner per cwd/worktree. A sergeant may run independent coherent mutation waves concurrently, with one managed Git worktree and one work-unit captain per wave from a clean committed baseline. Captains coordinate parallel read-only specialists and explicit sequential writer handoffs in their assigned worktree; do not create a worktree per specialist. Serialize shared-checkout, overlapping, and dependent changes. Collect all required results before writing the dossier. Delegated research is read-only.",
             mode === "sergeant"
-              ? "Use asynchronous workflow fanout for parallel lanes. Before terminal completion, wait for every required workflow, inspect its results and worktree handoffs, and ensure no required descendant remains queued, running, or detached."
+              ? "Use workflowScript with runs.all for concurrent wave captains. When their results gate your next action, keep the nested workflow foreground relative to you so its open tool call joins all parallel captains. If a required run detaches, use bg_wait for that exact run. Before terminal completion, inspect every wave handoff and ensure no required descendant remains queued, running, or detached."
               : "Collect every delegated result before returning.",
             "Report concisely: STATUS, TASK FILE, RESULTS, VALIDATION, BLOCKERS. Return the task path. No theatrical filler. Do not autostart another stage.",
           ].join("\n\n");
@@ -104,7 +104,7 @@ export default function complexWorkExtension(pi: ExtensionAPI): void {
                 `User requested /${command}: ${request}`,
                 `Task file: ${taskPath}`,
                 `Main agent: a fresh ${mode} unit will return through the normal subagent completion notification. Read the full result and task-file updates; retrieve saved output if truncated. Present the concise result and path. Do not autostart another stage or edit the task file while its unit is running.`,
-                "The top-level unit uses this checkout. Nested agents use fresh context. Parallel mutation requires one managed worktree per independent writer; shared-checkout, overlapping, and dependent writes remain serialized. These are independent user orders, not an approval workflow.",
+                "The top-level unit uses this checkout. Nested agents use fresh context. Parallel mutation uses one managed worktree and one captain per independent coherent wave, with one active mutation owner inside each wave worktree. Shared-checkout, overlapping, and dependent writes remain serialized. These are independent user orders, not an approval workflow.",
               ].join("\n\n"),
               display: false,
             },

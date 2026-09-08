@@ -33,9 +33,13 @@ Research and planning have `edit`/`write` for the assigned task file only by **p
 
 The top-level research, planning, or sergeant unit uses the current checkout with `worktree: false`; this keeps the selected task file in the user's repository. Nested children always receive complete fresh-context assignments.
 
-Read-only research and review may fan out asynchronously on stable inputs. A sergeant may run independent mutation lanes concurrently only through one asynchronous `workflowScript`, with a separate managed Git worktree (`worktree: true`) and explicit ownership for every writer. Managed worktree fanout requires a clean committed baseline. Shared-checkout writers, overlapping source seams, dependent assignments, integration, and task-file edits remain serialized. After each fanout, the headless sergeant uses `bg_wait` as a completion barrier, inspects every result and worktree handoff, integrates accepted changes sequentially, and verifies that no required descendant remains active before reporting completion.
+Read-only research and review may fan out on stable inputs. Parallel implementation is organized by coherent mutation wave rather than by individual worker: each independent wave gets one `work-unit` captain and one managed Git worktree (`worktree: true`) from a clean committed baseline. Separate wave captains may run concurrently through `runs.all(...)` when their contracts and integration order are genuinely independent.
 
-These rules provide filesystem isolation, not merely prompt-level boundaries. Use `/subagents` to inspect active units and their descendants before issuing an overlapping order. Preserve unrelated local edits; no automatic commit/push.
+A captain owns its wave's complete patch and keeps cooperating specialists in that assigned worktree. Specialists may investigate, design tests, and review in parallel. Mutation ownership passes explicitly and sequentially between the captain and at most one specialist writer; there is never more than one active mutation owner in a wave worktree. Shared-checkout work, overlapping source seams, dependent assignments, repository-wide mutation commands, integration, and task-file edits remain serialized.
+
+A nested `workflowScript` may be foreground relative to its headless coordinator while the children inside `runs.all(...)` remain parallel. The open tool call then supplies the completion barrier without sacrificing fanout. If a required workflow detaches, the coordinator uses `bg_wait` for that exact run. After each barrier, the sergeant inspects every captain result and wave-worktree handoff, integrates accepted patches sequentially, and verifies that no required descendant remains active before reporting completion.
+
+These rules isolate coherent waves while allowing specialists on one topic to cooperate without manufacturing merge work between them. Use `/subagents` to inspect active units and their descendants before issuing an overlapping order. Preserve unrelated local edits; no automatic commit/push.
 
 ## Implementation and validation
 
