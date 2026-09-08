@@ -357,7 +357,7 @@ test("commands wait for idle before choosing context or launching", async (t) =>
     new Promise((resolve) => {
       idle = resolve;
     });
-  const pending = h.run("research");
+  const pending = h.run("research", "Investigate stale cache");
   assert.equal(h.launches.length, 0);
   assert.equal(h.messages.length, 0);
   idle();
@@ -368,14 +368,14 @@ test("commands wait for idle before choosing context or launching", async (t) =>
 test("model omission leaves native inheritance intact", async (t) => {
   const h = harness(t);
   h.ctx.model = undefined;
-  await h.run("research");
+  await h.run("research", "Investigate stale cache");
   assert.equal(Object.hasOwn(h.launches[0], "model"), false);
 });
 
 test("native completion returns all unit results without launching another stage", async (t) => {
   const h = harness(t);
   for (const command of ["research", "plan", "sergeant"]) {
-    await h.run(command);
+    await h.run(command, "Process the cache task");
     const count = h.launches.length;
     const summary = `${command}: saved task evidence`;
     const result = {
@@ -448,6 +448,17 @@ test("concurrent launch acknowledgements stay correlated", async () => {
   assert.equal((await research).details.runId, "research-unit");
   assert.equal((await plan).details.runId, "plan-unit");
   assert.deepEqual(events.bus.eventNames(), ["subagents:rpc:v1:request"]);
+});
+
+test("managed worktrees use the shared sibling directory", () => {
+  const agentRoot = fileURLToPath(new URL("../", import.meta.url));
+  const config = JSON.parse(
+    readFileSync(
+      path.join(agentRoot, "extensions/subagent/config.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(config.worktreeBaseDir, "../worktrees");
 });
 
 test("installed agent discovery resolves standalone artifact-writing profiles without read-only ceilings", (t) => {
