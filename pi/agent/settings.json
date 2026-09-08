@@ -10,7 +10,7 @@
     },
     "agentOverrides": {
       "coordinator": {
-        "defaultContext": "fork"
+        "defaultContext": "fresh"
       },
       "claude-code": {
         "disabled": true

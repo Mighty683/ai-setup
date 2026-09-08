@@ -46,23 +46,6 @@ function selectedTask(ctx: ExtensionContext): string | undefined {
   return undefined;
 }
 
-function hasObjectiveHistory(ctx: ExtensionContext): boolean {
-  return ctx.sessionManager
-    .getBranch()
-    .some(
-      (entry) =>
-        (entry.type === "message" &&
-          entry.message.role === "user" &&
-          (typeof entry.message.content === "string"
-            ? entry.message.content.trim().length > 0
-            : entry.message.content.some(
-                (part) => part.type === "text" && part.text.trim().length > 0,
-              ))) ||
-        (entry.type === "compaction" && !!entry.summary.trim()) ||
-        (entry.type === "branch_summary" && !!entry.summary.trim()),
-    );
-}
-
 /** Independent orders, not a workflow: never launch a next stage automatically. */
 export default function complexWorkExtension(pi: ExtensionAPI): void {
   for (const [command, mode] of Object.entries(COMMANDS)) {
@@ -81,21 +64,12 @@ export default function complexWorkExtension(pi: ExtensionAPI): void {
                 "tasks",
                 `${new Date().toISOString().slice(0, 10)}-${randomUUID()}.md`,
               );
-          // Decide before appendEntry/sendMessage can create a leaf in an empty session.
-          const sessionFile = ctx.sessionManager.getSessionFile();
-          const context =
-            sessionFile &&
-            existsSync(sessionFile) &&
-            ctx.sessionManager.getLeafId()
-              ? "fork"
-              : "fresh";
+          const context = "fresh";
           const request =
             parsed.request ||
             (existsSync(taskPath)
               ? "Use the objective and relevant instructions in the task file."
-              : context === "fork" && hasObjectiveHistory(ctx)
-                ? "Use the objective, context, and user feedback in the current conversation."
-                : "");
+              : "");
           if (!request) {
             ctx.ui.notify(
               `Provide an objective: /${command} [--task <path>] <objective>, or select an existing task file.`,
@@ -114,12 +88,13 @@ export default function complexWorkExtension(pi: ExtensionAPI): void {
             `ORDER: ${mode}.`,
             `TASK FILE: ${taskPath}`,
             `REQUEST: ${request}`,
-            context === "fresh"
-              ? "Fresh session: no parent conversation is inherited. Use this request and the task file; clarify missing objectives or material ambiguity."
-              : "Use the forked conversation as supporting context; the selected task file is the shared artifact.",
+            "Fresh session: no parent conversation is inherited. Use this request and the task file; clarify missing objectives or material ambiguity.",
             order,
             "Read the task file first if it exists. Create it if missing. Preserve existing sections and human edits; make targeted updates, never blindly replace the dossier. Edit only the assigned task file yourself; delegate implementation only for a sergeant order.",
-            "Use the current shared checkout with worktree: false and isolation: none; do not create worktrees. One writer per cwd: serialize implementation writers, even for disjoint files. Parallelize read-only research/review; collect results before writing the dossier. Delegated research is read-only.",
+            "The top-level unit uses the current checkout. Give every child a complete cold-start packet and fresh context. Keep one writer per cwd/worktree. A sergeant may parallelize independent mutation lanes only in separate managed Git worktrees from a clean committed baseline; serialize shared-checkout, overlapping, and dependent changes. Parallelize read-only research/review and collect all required results before writing the dossier. Delegated research is read-only.",
+            mode === "sergeant"
+              ? "Use asynchronous workflow fanout for parallel lanes. Before terminal completion, wait for every required workflow, inspect its results and worktree handoffs, and ensure no required descendant remains queued, running, or detached."
+              : "Collect every delegated result before returning.",
             "Report concisely: STATUS, TASK FILE, RESULTS, VALIDATION, BLOCKERS. Return the task path. No theatrical filler. Do not autostart another stage.",
           ].join("\n\n");
           pi.sendMessage(
@@ -128,8 +103,8 @@ export default function complexWorkExtension(pi: ExtensionAPI): void {
               content: [
                 `User requested /${command}: ${request}`,
                 `Task file: ${taskPath}`,
-                `Main agent: a ${context} ${mode} unit will return through the normal subagent completion notification. Read the full result and task-file updates; retrieve saved output if truncated. Present the concise result and path. Do not autostart another stage or edit the task file while its unit is running.`,
-                "All agents share this checkout. Coordinate one writer per cwd; serialize implementation writers and parallelize read-only work. These are independent user orders, not an approval workflow.",
+                `Main agent: a fresh ${mode} unit will return through the normal subagent completion notification. Read the full result and task-file updates; retrieve saved output if truncated. Present the concise result and path. Do not autostart another stage or edit the task file while its unit is running.`,
+                "The top-level unit uses this checkout. Nested agents use fresh context. Parallel mutation requires one managed worktree per independent writer; shared-checkout, overlapping, and dependent writes remain serialized. These are independent user orders, not an approval workflow.",
               ].join("\n\n"),
               display: false,
             },

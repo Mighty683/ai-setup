@@ -55,7 +55,7 @@ Use `/research [objective]` to save findings, `/plan [guidance]` to write execut
 
 Each command accepts `--task "docs/tasks/my task.md"` for an explicit path. Otherwise it reuses the session's selected path (retained across reload/resume), or chooses a collision-safe name under `docs/tasks/`. Fresh sessions work with an explicit objective or existing task; no objective/history means ask, not launch. Existing task sections and human edits are preserved.
 
-The units are also ordinary subagents callable by other agents; supply the objective and task path. Research/plan may edit only the assigned task file by prompt convention; delegated research stays read-only. Sergeant owns the execution record, workers return results. All agents share the checkout without worktrees: one writer per cwd, serialized even for disjoint files; parallelize read-only work. Do not issue overlapping writer orders.
+The units are also ordinary subagents callable by other agents; supply the objective and task path. Research/plan may edit only the assigned task file by prompt convention; delegated research stays read-only. Sergeant owns the execution record, workers return results. Unit and nested-worker conversations use fresh context. Parallel read-only work may share a checkout; parallel mutation requires one managed Git worktree per independent writer, followed by a sergeant completion barrier and sequential integration. Shared-checkout, overlapping, and dependent writes remain serialized.
 
 Use Pi's normal `/subagents` interface for running agents. See [usage, implementation, and limitations](../../docs/complex-work.md).
 
