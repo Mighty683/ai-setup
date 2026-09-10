@@ -59,6 +59,20 @@ The units are also ordinary subagents callable by other agents; supply the objec
 
 Use Pi's normal `/subagents` interface for running agents. See [usage, implementation, and limitations](../../docs/complex-work.md).
 
-## 6. Secrets
+## 6. Enable optional extensions per project
+
+`cbmem` remains in the global `extensions/` directory but is excluded by default in the global settings. Enable it only in trusted projects that need Codebase Memory by force-including it in that project's `.pi/settings.json`:
+
+```json
+{
+  "extensions": [
+    "+/home/tomasz-szarek/.pi/agent/extensions/cbmem.ts"
+  ]
+}
+```
+
+The `+` overrides the global exclusion. Restart Pi or run `/reload` from that project after updating the setting.
+
+## 7. Secrets
 
 Do not commit `auth.json`, credentials, or API keys.
