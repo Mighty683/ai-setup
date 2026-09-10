@@ -45,9 +45,6 @@
     "gpt-5.6-terra",
     "gpt-5.6-luna"
   ],
-  "extensions": [
-    "!extensions/cbmem.ts"
-  ],
   "packages": [
     "npm:pi-subagents@0.66.0",
     "npm:pi-intercom@0.13.0",
