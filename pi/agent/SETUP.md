@@ -59,17 +59,17 @@ The units are also ordinary subagents callable by other agents; supply the objec
 
 Use Pi's normal `/subagents` interface for running agents. See [usage, implementation, and limitations](../../docs/complex-work.md).
 
-## 6. Enable optional extensions per project
+## 6. Install Ripwire (optional)
 
-`ripwire` is kept under `optional-extensions/` and is not loaded globally. Install it first, then enable the wrapper for a trusted project:
+Ripwire is used directly through the CLI, not a Pi extension:
 
 ```sh
 RIPWIRE_REPO=redhat-et/ripwire bash -c "$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)"
-mkdir -p .pi/extensions
-cp ~/.pi/agent/optional-extensions/ripwire.ts .pi/extensions/ripwire.ts
+cd your-project
+ripwire . --for="<the change you are about to make>"
 ```
 
-The installer places the binary at `~/.local/bin/ripwire`; set `RIPWIRE_BIN` before starting Pi to use another location. Restart Pi or run `/reload` from that project after copying the extension.
+The installer places the binary at `~/.local/bin/ripwire`.
 
 ## 7. Secrets
 

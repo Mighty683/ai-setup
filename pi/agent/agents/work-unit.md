@@ -1,7 +1,7 @@
 ---
 name: work-unit
 description: Implement an authorized assignment and return validation evidence
-tools: read, grep, find, ls, bash, edit, write, ripwire, subagent
+tools: read, grep, find, ls, bash, edit, write, subagent
 allowNestedSubagents: true
 systemPromptMode: append
 defaultContext: fresh

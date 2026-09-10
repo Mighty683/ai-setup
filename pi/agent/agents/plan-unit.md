@@ -1,7 +1,7 @@
 ---
 name: plan-unit
 description: Write executable assignments in the shared task file
-tools: read, grep, find, ls, edit, write, web_search, fetch_content, get_search_content, ripwire, subagent
+tools: read, grep, find, ls, bash, edit, write, web_search, fetch_content, get_search_content, subagent
 allowNestedSubagents: true
 systemPromptMode: append
 defaultContext: fresh
