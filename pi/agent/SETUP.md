@@ -61,17 +61,14 @@ Use Pi's normal `/subagents` interface for running agents. See [usage, implement
 
 ## 6. Enable optional extensions per project
 
-`cbmem` remains in the global `extensions/` directory but is excluded by default in the global settings. Enable it only in trusted projects that need Codebase Memory by force-including it in that project's `.pi/settings.json`:
+`cbmem` is kept under `optional-extensions/` and is not loaded globally. To enable it for a trusted project, copy it into that project's auto-discovered extension directory:
 
-```json
-{
-  "extensions": [
-    "+/home/tomasz-szarek/.pi/agent/extensions/cbmem.ts"
-  ]
-}
+```sh
+mkdir -p .pi/extensions
+cp ~/.pi/agent/optional-extensions/cbmem.ts .pi/extensions/cbmem.ts
 ```
 
-The `+` overrides the global exclusion. Restart Pi or run `/reload` from that project after updating the setting.
+Restart Pi or run `/reload` from that project after copying it.
 
 ## 7. Secrets
 
