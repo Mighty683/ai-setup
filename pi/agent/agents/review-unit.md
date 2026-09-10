@@ -1,7 +1,7 @@
 ---
 name: "review-unit"
 description: "Focused evidence-backed review of an implementation assignment"
-tools: read, bash, lsp_diagnostics
+tools: read, bash, lsp_diagnostics, cbmem
 acceptanceRole: "read-only"
 completionGuard: false
 inheritSkills: false
