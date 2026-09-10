@@ -61,14 +61,15 @@ Use Pi's normal `/subagents` interface for running agents. See [usage, implement
 
 ## 6. Enable optional extensions per project
 
-`cbmem` is kept under `optional-extensions/` and is not loaded globally. To enable it for a trusted project, copy it into that project's auto-discovered extension directory:
+`ripwire` is kept under `optional-extensions/` and is not loaded globally. Install it first, then enable the wrapper for a trusted project:
 
 ```sh
+RIPWIRE_REPO=redhat-et/ripwire bash -c "$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)"
 mkdir -p .pi/extensions
-cp ~/.pi/agent/optional-extensions/cbmem.ts .pi/extensions/cbmem.ts
+cp ~/.pi/agent/optional-extensions/ripwire.ts .pi/extensions/ripwire.ts
 ```
 
-Restart Pi or run `/reload` from that project after copying it.
+The installer places the binary at `~/.local/bin/ripwire`; set `RIPWIRE_BIN` before starting Pi to use another location. Restart Pi or run `/reload` from that project after copying the extension.
 
 ## 7. Secrets
 

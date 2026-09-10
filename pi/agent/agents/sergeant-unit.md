@@ -1,7 +1,7 @@
 ---
 name: sergeant-unit
 description: Execute task assignments through subagents and record completion evidence
-tools: read, grep, find, ls, bash, edit, write, cbmem, subagent, bg_wait
+tools: read, grep, find, ls, bash, edit, write, ripwire, subagent, bg_wait
 allowNestedSubagents: true
 systemPromptMode: append
 defaultContext: fresh
