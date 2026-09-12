@@ -31,10 +31,10 @@
         "disabled": true
       },
       "reviewer": {
-        "disabled": true
+        "disabled": false
       },
       "oracle": {
-        "disabled": true
+        "disabled": false
       }
     }
   },
@@ -43,7 +43,9 @@
     "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
-    "gpt-5.6-luna"
+    "gpt-5.6-luna",
+    "mistral-small-latest",
+    "mistral-medium-latest"
   ],
   "packages": [
     "npm:pi-subagents@0.66.0",
