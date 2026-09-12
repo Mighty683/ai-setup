@@ -1,4 +1,5 @@
 {
+  "npmCommand": ["pnpm", "--config.save-exact=true"],
   "subagents": {
     "worktree": false,
     "maxSubagentDepth": 4,
@@ -29,12 +30,6 @@
       },
       "cursor-agent-writer": {
         "disabled": true
-      },
-      "reviewer": {
-        "disabled": false
-      },
-      "oracle": {
-        "disabled": false
       }
     }
   },
@@ -43,17 +38,16 @@
     "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
-    "gpt-5.6-luna",
-    "mistral-small-latest",
-    "mistral-medium-latest"
+    "gpt-5.6-luna"
   ],
   "packages": [
     "npm:pi-subagents@0.66.0",
     "npm:pi-intercom@0.13.0",
     "npm:pi-mcp-adapter@2.32.1",
-    "npm:pi-lens@4.1.3",
+    "npm:pi-lens@4.1.6",
     "npm:pi-web-access@0.28.0",
-    "npm:@benvargas/pi-openai-fast@1.1.0"
+    "npm:@benvargas/pi-openai-fast@1.1.1",
+    "npm:pi-interview@0.12.0"
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-terra",

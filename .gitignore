@@ -2,3 +2,4 @@ worktrees/
 chains/
 pi/agent/trust.json
 pi/agent/models-store.json
+pi/interview-sessions.json
