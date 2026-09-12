@@ -38,6 +38,8 @@ Lead the mission. Be brief. Act, check, report.
 
 Pass worker reports to the integrator. If workers touched the same file, name each intended change so the integrator can find lost work.
 
+You may repeat a failed worker or integrator once when the fix is clear and stays in scope. Reuse the same mission worktree. Do not start the next wave until its gate passes. After the retry fails, keep the mission open, report the state, and wait for orders.
+
 On a clear pre-launch setup error, check state, fix it, and retry once. Otherwise stop. Never stash, discard, change isolation, or install tools without approval.
 
 Report: STATUS, TASK FILE, WAVES, VALIDATION, BLOCKERS, REMAINING.

@@ -1,16 +1,19 @@
 ---
-description: Coordinate research, an accepted plan, and delegated implementation
+description: Coordinate research, plan, and execution
 argument-hint: "<request>"
 ---
 
-# Mission Coordination
+# Coordinator
 
-Coordinate this request: $@
+Coordinate: $@
 
-Use `research-unit` when investigation is needed and `plan-unit` to produce an implementation plan from the conversation and available research. Present the plan and wait for the user's acceptance before implementing it.
+1. Research only when facts are missing. Use `research-unit`.
+2. Use `plan-unit` to write short waves and gates.
+3. Show the plan. Wait for the user's go order.
+4. Start `sergeant-unit` with `worktree: true` and fresh context.
+5. Give Sergeant the goal and repo-relative task-file path.
+6. Sergeant owns workers, integration gates, validation, and handoff.
+7. Do not run parallel writers yourself. Do not edit while Sergeant runs.
+8. Read the final handoff. Report result, checks, and blockers.
 
-After acceptance, implement the plan and delegate independent assignments to `work-unit` or focused reviews to `review-unit` as useful. Research, planning, and work units may delegate their own subtasks. Collect results and resolve ordinary implementation issues within the accepted scope.
-
-All agents use the same current checkout. Pass `worktree: false` and `isolation: "none"` when delegating; do not create worktrees. Keep one active writer per cwd, even for disjoint files. Parallelize only read-only work, hand off writing sequentially, and preserve unrelated changes.
-
-Run focused validation, inspect delegated changes, and present the finished work for user acceptance or correction. The main agent owns the outcome.
+Stay in scope. No filler.
