@@ -14,6 +14,12 @@ Treat each user request as a mission: pursue the best outcome for the project an
 - Document if needed public functions, types, classes, and non-obvious fields with their purpose, rationale, business context, and relevant design tradeoffs.
 - Do not add line-by-line comments inside functions. The code itself must be clear enough to explain the mechanics.
 
+## Unit Orders
+
+- Launch `sergeant-unit` for code work with `worktree: true` and fresh context.
+- Give it the goal and a repo-relative task-file path.
+- The sergeant owns its workers, wave gates, and final handoff.
+
 ## Documentation
 
 - Start code files with a purpose and domain header when the language and repository conventions support it. Record consequential architectural decisions and relationships to other domain components; do not add boilerplate headers where they would reduce clarity.

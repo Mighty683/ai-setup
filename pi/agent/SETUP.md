@@ -38,26 +38,16 @@ Confirm these custom agents are available:
 - `plan-unit`
 - `sergeant-unit`
 - `work-unit`
+- `integrator-unit`
 - `review-unit`
 
-Confirm these commands are visible:
+## 5. Issue orders
 
-- `/coordinator`
-- `/research`
-- `/plan`
-- `/sergeant`
-- `/complex-work` (research alias)
-- `/complex-work-plan` (plan alias)
+Use Pi's normal subagent tool. Give each unit a goal and task-file path.
 
-## 5. Issue independent unit orders
+Launch `sergeant-unit` in one managed worktree. It launches parallel `work-unit` workers in that same checkout with `worktree: false`. After each wave, one exclusive `integrator-unit` reviews, repairs, builds, and tests.
 
-Use `/research [objective]` to save findings, `/plan [guidance]` to write executable assignments, and `/sergeant [guidance]` to execute through subagents and record completion evidence. All three update the same task file. Choose any order; nothing autostarts the next stage, and calling sergeant authorizes execution without an extra approval ceremony.
-
-Each command accepts `--task "docs/tasks/my task.md"` for an explicit path. Otherwise it reuses the session's selected path (retained across reload/resume), or chooses a collision-safe name under `docs/tasks/`. Fresh sessions work with an explicit objective or existing task; no objective/history means ask, not launch. Existing task sections and human edits are preserved.
-
-The units are also ordinary subagents callable by other agents; supply the objective and task path. Research/plan may edit only the assigned task file by prompt convention; delegated research stays read-only. Sergeant owns the execution record, workers return results. Unit and nested-worker conversations use fresh context. Give each independent coherent mutation wave one managed Git worktree and one `work-unit` captain. Captains may coordinate parallel read-only specialists and explicit sequential writer handoffs in that worktree; keep one active mutation owner per wave. Separate independent wave worktrees may run concurrently, followed by a sergeant completion barrier and sequential integration. Shared-checkout, overlapping, and dependent writes remain serialized.
-
-Use Pi's normal `/subagents` interface for running agents. See [usage, implementation, and limitations](../../docs/complex-work.md).
+Research and planning use the current checkout. Nothing starts the next stage without an order.
 
 ## 6. Install Ripwire (optional)
 
