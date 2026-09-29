@@ -51,7 +51,7 @@ Research and planning use the current checkout. Nothing starts the next stage wi
 
 ## 6. Install Ripwire (optional)
 
-Ripwire is used directly through the CLI, not a Pi extension:
+Install the Ripwire CLI separately; the Pi `ripwire` tool wraps the installed binary for read-only task context in the current workspace:
 
 ```sh
 RIPWIRE_REPO=redhat-et/ripwire bash -c "$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)"
@@ -59,7 +59,7 @@ cd your-project
 ripwire . --for="<the change you are about to make>"
 ```
 
-The installer places the binary at `~/.local/bin/ripwire`.
+The installer places the binary at `~/.local/bin/ripwire`. Ensure that directory is on Pi's `PATH`, then run `/reload` (or restart Pi) to load `agent/extensions/ripwire.ts`. The tool accepts a task and an optional token budget; it does not install Ripwire or expose write/command-execution flags.
 
 ## 7. Secrets
 
