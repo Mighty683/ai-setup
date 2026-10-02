@@ -1,6 +1,6 @@
 {
   "persistState": true,
-  "active": false,
+  "active": true,
   "supportedModels": [
     "openai/gpt-6-astra",
     "openai/gpt-6-sol",

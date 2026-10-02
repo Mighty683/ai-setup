@@ -41,13 +41,13 @@
     "gpt-5.6-terra"
   ],
   "packages": [
-    "npm:pi-subagents@0.66.0",
-    "npm:pi-intercom@0.13.0",
-    "npm:pi-mcp-adapter@2.32.1",
-    "npm:pi-lens@4.1.6",
-    "npm:pi-web-access@0.28.0",
+    "npm:pi-subagents@0.74.0",
+    "npm:pi-intercom@0.16.0",
+    "npm:pi-mcp-adapter@5.0.0",
+    "npm:pi-lens@4.3.0",
+    "npm:pi-web-access@0.35.0",
     "npm:@benvargas/pi-openai-fast@1.1.1",
-    "npm:pi-interview@0.12.0"
+    "npm:pi-interview@0.13.0"
   ],
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-6-sol",
