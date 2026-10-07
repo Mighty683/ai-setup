@@ -1,5 +1,8 @@
 {
-  "npmCommand": ["pnpm", "--config.save-exact=true"],
+  "npmCommand": [
+    "pnpm",
+    "--config.save-exact=true"
+  ],
   "subagents": {
     "worktree": false,
     "maxSubagentDepth": 4,
@@ -33,15 +36,16 @@
       }
     }
   },
-  "lastChangelogVersion": "0.85.1",
+  "lastChangelogVersion": "1.0.0",
   "enabledModels": [
     "gpt-6-astra",
     "gpt-6-sol",
+    "gpt-6.1-sol",
     "gpt-6-luna",
     "gpt-5.6-terra"
   ],
   "packages": [
-    "npm:pi-subagents@0.74.0",
+    "npm:pi-subagents@0.75.0",
     "npm:pi-intercom@0.16.0",
     "npm:pi-mcp-adapter@5.0.0",
     "npm:pi-lens@4.3.0",
@@ -50,7 +54,10 @@
     "npm:pi-interview@0.13.0"
   ],
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6-sol",
+  "defaultModel": "gpt-6.1-sol",
   "defaultThinkingLevel": "high",
-  "theme": "dark"
+  "theme": "dark",
+  "extensions": [
+    "-builtin:mcp"
+  ]
 }

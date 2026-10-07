@@ -4,3 +4,4 @@ pi/agent/trust.json
 pi/agent/models-store.json
 pi/interview-sessions.json
 pi/interview-recovery/
+pi/agent/pi-subagents/last-seen-version.json
