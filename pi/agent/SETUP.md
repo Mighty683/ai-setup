@@ -64,3 +64,14 @@ The installer places the binary at `~/.local/bin/ripwire`. Ensure that directory
 ## 7. Secrets
 
 Do not commit `auth.json`, credentials, or API keys.
+
+## 8. Complex-work MVP
+
+Requires Pi 1.0, `pi-subagents` 0.75+, installed `pi-interview` 0.13+, and XState 5.33.2. Keep the linked `~/.pi` layout so child bridge imports resolve. For a fresh setup, install the UI runtime with `pnpm --dir ~/.pi/agent/npm add --save-exact --ignore-scripts xstate@5.33.2`. Reload after linking the new extension and `complex-*` profiles:
+
+```text
+/reload
+/complex-work
+```
+
+An XState machine owns screens, selection, confirmations, pending orders, and permitted controls. Removed missions disappear from the list, with files retained; no mission banner remains in normal Pi. `/complex-work` opens a full-screen workspace: selected output and input on the left; workflow agents, statuses, and explicit actions on the right. Tab changes panels; arrows choose actions even from input; Esc returns to normal Pi without stopping agents. Reopen with bare `/complex-work`. New missions require a clean original Git checkout except workflow-owned task artifacts and run in their own retained worktree. Code-writing agents commit their scoped changes; only a separately confirmed **Merge and close task** merges into the original branch, never pushes, and retains the branch/worktree. Use **Mission options → Refresh status** after reload/restart. Read the [operator guide](../../docs/complex-work.md). Try a disposable project first; end-to-end tests and the quality pass are deferred until manual UI acceptance.
